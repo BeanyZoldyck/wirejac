@@ -1,0 +1,21 @@
+Practical paths (best → OK)
+1. Native Jac on the Pi (recommended for “Jac native on hardware”)
+- SSH into Pi, install Jac, write sensor.na.jac
+- jac nacompile sensor.na.jac -o sensor
+- Run with GPIO permissions (sudo or gpio group + udev rules)
+- Declare GPIO/I2C functions in import from blocks (libgpiod, etc.)
+2. Jac Python (jac run) on the Pi
+- Use RPi.GPIO or gpiozero from Python interop
+- Easier for hackathons; not a standalone nacompile binary
+3. Hybrid
+- nacompile binary for logic
+- Small C/Python helper for hardware if C interop is heavy
+4. PC Jac + MCU peripheral (your Nano setup)
+- Jac on PC, firmware on Nano/ESP32 over serial
+- Good when the board isn’t running Linux
+Constraints to plan for
+- Permissions: GPIO/I2C need root, gpio/i2c groups, or udev rules
+- No Arduino setup()/loop(): you write with entry { while True { ... } }
+- Realtime: Jac isn’t hard-real-time; ultrasonic pulse timing may need a tight C helper
+- Cross-compile: building on the Pi is simplest; cross-build from x86_64 needs an aarch64 toolchain and matching Jac/LLVM target support
+- Wiring: 3.3 V logic, level shifters, current-limit resistors for LEDs
