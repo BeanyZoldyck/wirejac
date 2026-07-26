@@ -1,9 +1,9 @@
 [project]
-name = "wirejac-hardware"
+name = "wirejac-agent-graph"
 version = "0.1.0"
-description = "Jac-native hardware planning, visualization, deployment, and verification service"
+description = "Jac-native WireJac agent graph and guarded ESP32 hardware service"
 entry-point = "main.jac"
-kind = "service"
+kind = "api-service"
 jac-version = "==0.34.7"
 requires-python = ">=3.12"
 
@@ -18,8 +18,15 @@ wokwi-client = "==0.4.0"
 pytest = ">=8.4,<9"
 pytest-asyncio = ">=1.1,<2"
 
+[run]
+main = true
+cache = true
+topology_index = true
+diagnostics = "error"
+
 [serve]
 port = 8000
+main = true
 
 [scale.server]
 host = "127.0.0.1"
@@ -36,6 +43,10 @@ directory = "tests"
 verbose = true
 fail_fast = true
 
+[build]
+typecheck = true
+dir = ".jac"
+
 [check]
 enforce_access = true
 
@@ -44,3 +55,7 @@ select = ["default"]
 
 [dev]
 test_jobs = "1"
+
+[scripts]
+demo = "jac run main.jac --no-cache"
+test = "jac test tests/wirejac.jac"

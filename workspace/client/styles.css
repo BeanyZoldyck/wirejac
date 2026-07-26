@@ -1,0 +1,42 @@
+:root {
+  color-scheme: dark;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  background: #0a0d0c;
+  color: #edf5ef;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(126, 255, 180, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(126, 255, 180, 0.035) 1px, transparent 1px),
+    #0a0d0c;
+  background-size: 32px 32px;
+}
+
+.shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0; }
+.masthead, .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.eyebrow { margin: 0 0 8px; color: #76f4a8; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+h1, h2 { margin: 0; font-family: Inter, Arial, sans-serif; letter-spacing: -.035em; }
+h1 { font-size: clamp(32px, 6vw, 64px); }
+h2 { font-size: clamp(23px, 3vw, 34px); }
+.status { padding: 10px 14px; border: 1px solid #30473a; background: #101713; font-size: 12px; white-space: nowrap; }
+.status span { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: #76f4a8; box-shadow: 0 0 12px #76f4a8; }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 36px 0; border: 1px solid #26362d; background: #26362d; }
+.metrics article { display: flex; flex-direction: column; gap: 8px; padding: 24px; background: #0e1411; }
+.metrics strong { font: 600 clamp(24px, 4vw, 40px) Inter, Arial, sans-serif; }
+.metrics span { color: #8fa298; font-size: 12px; text-transform: uppercase; }
+.chart-panel { border: 1px solid #2b3c33; background: rgba(14, 20, 17, .92); padding: 24px; }
+.legend { display: flex; gap: 14px; font-weight: 700; }
+.legend .x { color: #76f4a8; } .legend .y { color: #ffbd69; } .legend .z { color: #75a7ff; }
+canvas { display: block; width: 100%; height: 360px; margin-top: 24px; background: #090d0b; border: 1px solid #203027; }
+
+@media (max-width: 680px) {
+  .shell { width: min(100% - 20px, 1180px); padding: 24px 0; }
+  .masthead, .panel-heading { align-items: flex-start; flex-direction: column; }
+  .metrics { grid-template-columns: 1fr; }
+  canvas { height: 280px; }
+}

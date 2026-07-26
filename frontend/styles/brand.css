@@ -1,0 +1,75 @@
+/* ===========================================================================
+   wirejac brand layer — loaded AFTER styles/global.css so it wins the cascade.
+   Keep all hand-authored, retheme-proof customizations here; `jac retheme`
+   overwrites global.css but never touches this file.
+   =========================================================================== */
+
+/* --- Default UI font: M PLUS 1 (variable) — everywhere by default ---------- */
+@import "@fontsource-variable/m-plus-1";
+
+:root {
+    --font-sans: "M PLUS 1 Variable", "M PLUS 1", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* html sets the root family; `*` forces every element (including shadcn's
+   `@apply font-sans` on body/controls, which is inlined literal) to inherit it.
+   Unlayered rules beat Tailwind's @layer, so this wins cleanly. */
+html {
+    font-family: var(--font-sans);
+}
+
+*,
+*::before,
+*::after {
+    font-family: inherit;
+}
+
+/* --- Squircle corners by default (Apple-style superellipse) ---------------- *
+ * Applies wherever an element has a border-radius. `:where()` keeps zero
+ * specificity so any component can opt out. Declaration order is a graceful
+ * fallback: browsers that don't understand `squircle` keep `superellipse(4)`;
+ * browsers with neither fall back to normal rounded corners.                  */
+:where(*),
+:where(*)::before,
+:where(*)::after {
+    corner-shape: superellipse(4);
+    corner-shape: squircle;
+}
+
+/* --- Shared "working" loader (loaders.wtf spirit) ------------------------- *
+ * Global class so any component can drop <span class="wj-loader ..."/>. Border
+ * color comes from a Tailwind utility on the element (e.g. `border-primary`);
+ * we only force the top edge transparent to open the spinning ring gap.       */
+.wj-loader {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 9999px;
+    border-top-color: transparent !important;
+    animation: wj-loader-spin 0.7s linear infinite;
+}
+
+@keyframes wj-loader-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* --- Node spawn-in (mock progressive reveal) ----------------------------- *
+ * Plays once when a node is first revealed on the timeline.                  */
+@keyframes wj-node-in {
+    from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.wj-node-in {
+    animation: wj-node-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Agent "thinking…" three-dot pulse (loaders.wtf style) --------------- */
+@keyframes wj-think {
+    0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+    40%           { opacity: 1;    transform: translateY(-3px); }
+}
+.wj-think-dot {
+    animation: wj-think 1.2s infinite ease-in-out both;
+}

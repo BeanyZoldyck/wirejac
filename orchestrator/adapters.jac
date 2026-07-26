@@ -1,0 +1,644 @@
+"""Host integrations used by the Jac graph.
+
+The graph and contracts remain Jac-native. Complex host operations are kept in
+this Jac module's Python interop block so there is no separate agent harness.
+"""
+
+import os;
+import from typing { cast }
+import from orchestrator.models {
+    Activation,
+    ActivationState,
+    AgentResult,
+    DeploymentResult,
+    ImpactPlan,
+    MonitorResult
+}
+import from orchestrator.aws.bridge { is_aws_intent, validate_aws, deploy_aws }
+import from orchestrator.aws.pipeline { ApprovalGrant }
+import from orchestrator.aws.fulfill {
+    server_infra_needs,
+    intent_for_server_infra
+}
+
+::py::
+import datetime
+import fnmatch
+import hashlib
+import json
+import os
+import pathlib
+import shlex
+import shutil
+import subprocess
+import urllib.error
+import urllib.request
+import uuid
+
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_EVENT_FILE = _PROJECT_ROOT / "runtime" / "events" / "events.jsonl"
+_SNAPSHOT_ROOT = _PROJECT_ROOT / "runtime" / "snapshots"
+_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
+_MAX_TOOL_TURNS = 10
+_MAX_OUTPUT = 12000
+
+
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _new_request_id():
+    return "req-" + uuid.uuid4().hex[:16]
+
+
+def _safe_path(workspace, requested):
+    root = (_PROJECT_ROOT / workspace).resolve()
+    candidate = (root / requested).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise PermissionError("path escapes workspace") from exc
+    if candidate != root:
+        current = candidate
+        while current != root:
+            if current.exists() and current.is_symlink():
+                raise PermissionError("symlinks are not allowed in workspace tools")
+            current = current.parent
+    return root, candidate
+
+
+def _read_text(path):
+    return path.read_text(encoding="utf-8")
+
+
+def _workspace_manifest(workspace):
+    root, _ = _safe_path(workspace, ".")
+    entries = []
+    if not root.exists():
+        return entries
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and not path.is_symlink():
+            relative = str(path.relative_to(root))
+            if any(part in {"node_modules", ".git", "__pycache__"} for part in path.parts):
+                continue
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            entries.append({"path": relative, "sha256": digest})
+    return entries
+
+
+def _snapshot_workspace(request_id, name, workspace):
+    root, _ = _safe_path(workspace, ".")
+    target = _SNAPSHOT_ROOT / request_id / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        shutil.rmtree(target)
+    if root.exists():
+        shutil.copytree(
+            root,
+            target,
+            ignore=shutil.ignore_patterns("node_modules", ".git", "__pycache__")
+        )
+    else:
+        target.mkdir(parents=True)
+    manifest = {
+        "request_id": request_id,
+        "workspace": name,
+        "source": str(root),
+        "snapshot": str(target),
+        "files": _workspace_manifest(workspace),
+    }
+    (target / "snapshot-manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    return str(target)
+
+
+def _tool_schemas():
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "list_files",
+                "description": "List files in the assigned workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"pattern": {"type": "string"}},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a UTF-8 file in the assigned workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_text",
+                "description": "Search text in workspace files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "pattern": {"type": "string"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write a complete UTF-8 file in the assigned workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Run an allowlisted command in the assigned workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "argv": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                        }
+                    },
+                    "required": ["argv"],
+                },
+            },
+        },
+    ]
+
+
+def _execute_tool(workspace, allowed_commands, name, arguments):
+    root, _ = _safe_path(workspace, ".")
+    if name == "list_files":
+        pattern = arguments.get("pattern", "*")
+        files = []
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and not path.is_symlink():
+                relative = str(path.relative_to(root))
+                if fnmatch.fnmatch(relative, pattern) or pattern == "*":
+                    files.append(relative)
+        return {"files": files[:500]}
+    if name == "read_file":
+        _, path = _safe_path(workspace, arguments["path"])
+        return {"path": arguments["path"], "content": _read_text(path)[:_MAX_OUTPUT]}
+    if name == "search_text":
+        query = arguments["query"]
+        pattern = arguments.get("pattern", "*")
+        matches = []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = str(path.relative_to(root))
+            if not fnmatch.fnmatch(relative, pattern) and pattern != "*":
+                continue
+            try:
+                for number, line in enumerate(_read_text(path).splitlines(), 1):
+                    if query in line:
+                        matches.append({"path": relative, "line": number, "text": line[:500]})
+            except UnicodeDecodeError:
+                continue
+            if len(matches) >= 200:
+                break
+        return {"matches": matches}
+    if name == "write_file":
+        _, path = _safe_path(workspace, arguments["path"])
+        content = arguments["content"]
+        if len(content.encode("utf-8")) > 1_000_000:
+            raise ValueError("file exceeds 1 MB tool limit")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return {"written": arguments["path"], "bytes": len(content.encode("utf-8"))}
+    if name == "run_command":
+        argv = arguments["argv"]
+        if not argv or argv[0] not in allowed_commands:
+            raise PermissionError("command executable is not allowlisted")
+        completed = subprocess.run(
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={"PATH": os.environ.get("PATH", "")},
+        )
+        return {
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-_MAX_OUTPUT:],
+            "stderr": completed.stderr[-_MAX_OUTPUT:],
+        }
+    raise ValueError("unknown tool")
+
+
+def _validation_commands(name):
+    return {
+        "client": [["npm", "run", "check"]],
+        "server": [["jac", "check", "main.jac"]],
+        "device": [["jac", "check", "src/main.jac"]],
+    }.get(name, [])
+
+
+def _validate_workspace(name, workspace, allowed_commands):
+    root, _ = _safe_path(workspace, ".")
+    checks = []
+    for argv in _validation_commands(name):
+        if argv[0] not in allowed_commands:
+            return False, [{"argv": argv, "error": "validator is not allowlisted"}]
+        completed = subprocess.run(
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={"PATH": os.environ.get("PATH", "")},
+        )
+        check = {
+            "argv": argv,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-_MAX_OUTPUT:],
+            "stderr": completed.stderr[-_MAX_OUTPUT:],
+        }
+        checks.append(check)
+        if completed.returncode != 0:
+            return False, checks
+    return True, checks
+
+
+def _openrouter(messages, tools=None):
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY is required unless WIREJAC_MOCK=1")
+    body = {
+        "model": os.environ.get("OPENROUTER_MODEL", _DEFAULT_MODEL),
+        "messages": messages,
+        "temperature": 0.1,
+    }
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    request = urllib.request.Request(
+        _OPENROUTER_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": "Bearer " + key,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://wirejac.local",
+            "X-Title": "WireJac",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:2000]
+        raise RuntimeError(f"OpenRouter HTTP {exc.code}: {detail}") from exc
+    return payload["choices"][0]["message"]
+
+
+def _extract_json(content):
+    text = (content or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+    return json.loads(text)
+
+
+def _read_workspace_context(workspaces):
+    context = []
+    for workspace in workspaces:
+        root, _ = _safe_path(workspace["path"], ".")
+        skill = root / pathlib.Path(workspace["skill_path"]).name
+        spec = root / pathlib.Path(workspace["spec_path"]).name
+        context.append({
+            "name": workspace["name"],
+            "skill": _read_text(skill) if skill.exists() else "",
+            "api_spec": _read_text(spec) if spec.exists() else "",
+            "files": [entry["path"] for entry in _workspace_manifest(workspace["path"])][:200],
+        })
+    return context
+
+
+def _plan_change(prompt, workspaces):
+    if os.environ.get("WIREJAC_MOCK") == "1":
+        text = (prompt or "").lower()
+        needs_store = any(
+            token in text
+            for token in (
+                "store",
+                "history",
+                "database",
+                "persist",
+                "dynamodb",
+                "samples table",
+            )
+        )
+        if needs_store:
+            return {
+                "selected": ["server", "client"],
+                "skipped": {"device": "No firmware change"},
+                "tasks": {
+                    "server": "Expose durable sample ingest/query for: " + prompt,
+                    "client": "Show sample history from the server API for: " + prompt,
+                },
+                "acceptance": [
+                    "GET /api/samples returns stored history",
+                    "No runtime errors",
+                ],
+                "contract_change_expected": False,
+                "deployment_intent": "aws_cdk",
+            }
+        return {
+            "selected": ["client"],
+            "skipped": {"server": "No API change", "device": "No firmware change"},
+            "tasks": {"client": prompt},
+            "acceptance": ["Requested dashboard UI change is present", "No runtime errors"],
+            "contract_change_expected": False,
+            "deployment_intent": "hot_reload",
+        }
+    context = _read_workspace_context(workspaces)
+    system = """You are the WireJac coordinator. Select only affected workspaces from client, server, and device. Return JSON only with keys selected (array), skipped (object with reasons), tasks (object), acceptance (array), contract_change_expected (boolean), and deployment_intent (hot_reload, restart_server, prepare_device, aws_cdk, deploy_backend, or provision_infra). Use aws_cdk/provision_infra when the server needs new or undeployed AWS resources such as DynamoDB. Every unselected workspace must appear in skipped. Do not modify files."""
+    message = _openrouter([
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps({"prompt": prompt, "workspaces": context})},
+    ])
+    return _extract_json(message.get("content"))
+
+
+def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, acceptance, allowed_commands):
+    snapshot = _snapshot_workspace(request_id, name, workspace)
+    root, _ = _safe_path(workspace, ".")
+    spec_file = root / pathlib.Path(spec_path).name
+    before_spec = _read_text(spec_file) if spec_file.exists() else ""
+    if os.environ.get("WIREJAC_MOCK") == "1":
+        valid, checks = _validate_workspace(name, workspace, allowed_commands)
+        return {
+            "success": valid,
+            "summary": f"Mocked and validated {name} change: {task}" if valid else "Mock validation failed",
+            "tool_count": 0,
+            "revision": snapshot,
+            "contract_changed": False,
+            "error": "" if valid else json.dumps(checks),
+        }
+    skill_file = root / pathlib.Path(skill_path).name
+    skill = _read_text(skill_file) if skill_file.exists() else ""
+    spec = before_spec
+    system = f"""You are the {name} workspace agent. You may act only through the provided tools, which are confined to {workspace}. Follow these role instructions:\n\n{skill}\n\nAPI contract:\n\n{spec}\n\nComplete the task, inspect files before editing, and run appropriate validation. When done, return JSON only with success (boolean), summary (string), and error (string). Never claim success if validation failed."""
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps({"task": task, "acceptance": acceptance})},
+    ]
+    tool_count = 0
+    final = None
+    for _ in range(_MAX_TOOL_TURNS):
+        message = _openrouter(messages, _tool_schemas())
+        messages.append(message)
+        calls = message.get("tool_calls") or []
+        if not calls:
+            candidate = _extract_json(message.get("content"))
+            if candidate.get("success"):
+                valid, checks = _validate_workspace(name, workspace, allowed_commands)
+                if not valid:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "Deterministic validation failed. Repair the workspace, rerun checks, "
+                            "and return the final JSON again. Validation output:\n"
+                            + json.dumps(checks)
+                        ),
+                    })
+                    continue
+            final = candidate
+            break
+        for call in calls:
+            tool_count += 1
+            function = call["function"]
+            try:
+                arguments = json.loads(function.get("arguments") or "{}")
+                result = _execute_tool(workspace, allowed_commands, function["name"], arguments)
+            except Exception as exc:
+                result = {"error": str(exc)}
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call["id"],
+                "content": json.dumps(result),
+            })
+    if final is None:
+        return {
+            "success": False,
+            "summary": "Agent exceeded the tool-turn limit",
+            "tool_count": tool_count,
+            "revision": snapshot,
+            "contract_changed": False,
+            "error": "tool-turn limit exceeded",
+        }
+    after_spec = _read_text(spec_file) if spec_file.exists() else ""
+    return {
+        "success": bool(final.get("success")),
+        "summary": str(final.get("summary", "")),
+        "tool_count": tool_count,
+        "revision": snapshot,
+        "contract_changed": before_spec != after_spec,
+        "error": str(final.get("error", "")),
+    }
+
+
+def _emit_event(event):
+    event_file = pathlib.Path(os.environ.get("WIREJAC_EVENT_FILE", str(_EVENT_FILE)))
+    event_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = dict(event)
+    payload["timestamp"] = payload.get("timestamp") or _utc_now()
+    with event_file.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, separators=(",", ":")) + "\n")
+    # Dashboard placeholder: replace this file sink with SSE/WebSocket publishing.
+    return payload["timestamp"]
+
+
+def _deploy(selected, intent):
+    if "device" in selected:
+        return {
+            "success": True,
+            "summary": "ESP32 artifact preparation placeholder reached; no board was flashed",
+            "awaiting_approval": True,
+            "artifact": "workspace/device/generated/main.py",
+            "error": "",
+        }
+    if intent == "hot_reload":
+        return {
+            "success": True,
+            "summary": "Client files are validated; external dashboard hot reload placeholder notified",
+            "awaiting_approval": False,
+            "artifact": "",
+            "error": "",
+        }
+    return {
+        "success": True,
+        "summary": f"Deterministic deployment placeholder completed for {intent}",
+        "awaiting_approval": False,
+        "artifact": "",
+        "error": "",
+    }
+
+
+def _monitor(acceptance):
+    # Dashboard placeholder: external browser/runtime adapters will replace this.
+    return {
+        "success": True,
+        "summary": f"Monitoring placeholder accepted {len(acceptance)} checks",
+        "errors": [],
+    }
+::py::
+
+
+def new_request_id() -> str {
+    return cast(str, _new_request_id());
+}
+
+
+def now() -> str {
+    return cast(str, _utc_now());
+}
+
+
+def plan_change(prompt: str, workspaces: list[dict]) -> ImpactPlan {
+    data = cast(dict, _plan_change(prompt, workspaces));
+    return ImpactPlan(
+        selected=cast(list[str], data.get("selected", [])),
+        skipped=cast(dict[str, str], data.get("skipped", {})),
+        tasks=cast(dict[str, str], data.get("tasks", {})),
+        acceptance=cast(list[str], data.get("acceptance", [])),
+        contract_change_expected=cast(bool, data.get("contract_change_expected", False)),
+        deployment_intent=cast(str, data.get("deployment_intent", "hot_reload"))
+    );
+}
+
+
+def run_workspace_agent(
+    request_id: str,
+    name: str,
+    workspace: str,
+    skill_path: str,
+    spec_path: str,
+    task: str,
+    acceptance: list[str],
+    allowed_commands: list[str]
+) -> AgentResult {
+    data = cast(dict, _workspace_agent(
+        request_id,
+        name,
+        workspace,
+        skill_path,
+        spec_path,
+        task,
+        acceptance,
+        allowed_commands
+    ));
+    return AgentResult(
+        success=cast(bool, data.get("success", False)),
+        summary=cast(str, data.get("summary", "")),
+        tool_count=cast(int, data.get("tool_count", 0)),
+        revision=cast(str, data.get("revision", "")),
+        contract_changed=cast(bool, data.get("contract_changed", False)),
+        error=cast(str, data.get("error", ""))
+    );
+}
+
+
+def emit_activation(event: Activation) -> None {
+    event.timestamp = cast(str, _emit_event({
+        "request_id": event.request_id,
+        "node": event.node_name,
+        "state": event.state.value,
+        "summary": event.summary,
+        "timestamp": event.timestamp,
+        "tool_count": event.tool_count,
+        "revision": event.revision,
+        "error": event.error
+    }));
+}
+
+
+def deploy(
+    selected: list[str],
+    intent: str,
+    request_id: str = ""
+) -> DeploymentResult {
+    rid = request_id if request_id else "anonymous";
+    # Server durable-storage needs upgrade a plain restart into the AWS pipeline.
+    effective_intent = intent;
+    if "server" in selected and not is_aws_intent(effective_intent) {
+        effective_intent = intent_for_server_infra(server_infra_needs(rid));
+    }
+
+    # AWS CDK path: phase one validates and stops at the approval gate. A second
+    # call with WIREJAC_APPROVAL_HASH (+ WIREJAC_CONFIRM_DEPLOY=1) completes it.
+    if is_aws_intent(effective_intent) {
+        if os.environ.get("WIREJAC_MOCK", "") == "1" {
+            needs = server_infra_needs(rid);
+            names = ", ".join([req.resource_name for req in needs]);
+            return DeploymentResult(
+                success=True,
+                awaiting_approval=True,
+                summary=(
+                    f"Mocked AWS validation for {effective_intent} "
+                    + f"({names}); awaiting approval"
+                ),
+                artifact="mock-change-hash"
+            );
+        }
+        approval_hash = os.environ.get("WIREJAC_APPROVAL_HASH", "");
+        if approval_hash and os.environ.get("WIREJAC_CONFIRM_DEPLOY", "") == "1" {
+            grant = ApprovalGrant(
+                request_id=rid,
+                change_hash=approval_hash,
+                approved_by=os.environ.get("WIREJAC_APPROVED_BY", "operator")
+            );
+            return deploy_aws(rid, grant);
+        }
+        return validate_aws(rid);
+    }
+
+    data = cast(dict, _deploy(selected, effective_intent));
+    return DeploymentResult(
+        success=cast(bool, data.get("success", False)),
+        summary=cast(str, data.get("summary", "")),
+        awaiting_approval=cast(bool, data.get("awaiting_approval", False)),
+        artifact=cast(str, data.get("artifact", "")),
+        error=cast(str, data.get("error", ""))
+    );
+}
+
+
+def monitor(acceptance: list[str]) -> MonitorResult {
+    data = cast(dict, _monitor(acceptance));
+    return MonitorResult(
+        success=cast(bool, data.get("success", False)),
+        summary=cast(str, data.get("summary", "")),
+        errors=cast(list[str], data.get("errors", []))
+    );
+}

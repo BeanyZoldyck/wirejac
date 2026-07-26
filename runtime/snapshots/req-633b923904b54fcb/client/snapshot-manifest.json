@@ -1,0 +1,32 @@
+{
+  "request_id": "req-633b923904b54fcb",
+  "workspace": "client",
+  "source": "/home/oem/git/jachacks2/workspace/client",
+  "snapshot": "/home/oem/git/jachacks2/runtime/snapshots/req-633b923904b54fcb/client",
+  "files": [
+    {
+      "path": "api-spec.md",
+      "sha256": "6eb09e9b7f7c2337c9c9e648ede34b47ee2ea9be81f02fb7af949208ec4d5261"
+    },
+    {
+      "path": "app.js",
+      "sha256": "4e3ac4a8b16a500d1a562b27e35e05a62eb3a8a5f038689f75ded67e6a1af24d"
+    },
+    {
+      "path": "client.md",
+      "sha256": "3aad929d5c90a83ddbccf66a438f63d2a62b16a7d988807ecd21a298ee14f62c"
+    },
+    {
+      "path": "index.html",
+      "sha256": "d7d6859619821e97d53c3625694b962dc15a896f889ee00d445858004825b3c6"
+    },
+    {
+      "path": "package.json",
+      "sha256": "2acc4e15d1aafaf16710cad74f0cf8a456f2a421e96316dee8528cb744737c39"
+    },
+    {
+      "path": "styles.css",
+      "sha256": "106e5abda8fb1b7cb534c4b143524603e6c5804f8d59f6055659e322e6bda88a"
+    }
+  ]
+}
