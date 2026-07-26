@@ -7,37 +7,50 @@ This repository contains a runnable Jac-native autonomous agent graph for an emb
 - A current Jac installation.
 - Node and npm for the demo client validation.
 - An OpenRouter key for live agents.
-- Optional: AWS CLI profile `wirejac` and `boto3` if the server should use DynamoDB.
+- Optional: AWS CLI profile `wirejac` only for deploying infrastructure (not for using the samples API).
 
 The configured default model is `deepseek/deepseek-v4-flash`. Override it with `OPENROUTER_MODEL` if necessary.
 
-## AWS samples store
+## Cloud samples API (portable)
 
-Durable accelerometer history lives in DynamoDB table `wirejac-samples`
-(`WirejacDevStack`, `us-west-2`). The table name is also published at SSM
-`/wirejac/dev/samples-table-name`.
+Hackathon default: DynamoDB in AWS, HTTPS API in Lambda, shared team API key.
 
-Point the server at the deployed table:
-
-```bash
-export WIREJAC_SAMPLES_TABLE=wirejac-samples
-export WIREJAC_AWS_REGION=us-west-2
-export WIREJAC_AWS_PROFILE=wirejac
+```text
+Meta app / device  --(X-Api-Key)-->  SamplesApi (Lambda Function URL)
+                                          | IAM role
+                                          v
+                                     DynamoDB wirejac-samples
 ```
 
-Without `WIREJAC_SAMPLES_TABLE`, the server keeps an in-memory store (fine for
-mock runs). Deploy and stack details: [`infrastructure/README.md`](infrastructure/README.md).
-Server contract: [`workspace/server/api-spec.md`](workspace/server/api-spec.md).
+No AWS login needed on laptops to read/write samples. After `cdk deploy`:
+
+```bash
+# API URL
+aws ssm get-parameter --name /wirejac/dev/samples-api-url --profile wirejac \
+  --query Parameter.Value --output text
+
+# Shared team key
+aws secretsmanager get-secret-value --secret-id wirejac/dev/samples-api-key \
+  --profile wirejac --query SecretString --output text
+```
+
+```bash
+curl "$SAMPLES_API_URL/api/health"
+curl -H "X-Api-Key: $WIREJAC_API_KEY" \
+  "$SAMPLES_API_URL/api/samples?session_id=training-001"
+```
+
+Local Jac (`workspace/server`) still supports in-memory or Dynamo via profile
+when you want it; set `WIREJAC_API_KEY` to exercise the same auth gate.
+Details: [`infrastructure/README.md`](infrastructure/README.md).
+Contract: [`workspace/server/api-spec.md`](workspace/server/api-spec.md).
 
 ## Meta app hosting (S3 + CloudFront)
 
-The product UI (`workspace/client`, the accelerometer Meta app) is hosted on
-private S3 behind CloudFront. `cdk deploy` syncs those static files and prints
-`MetaAppUrl` (also SSM `/wirejac/dev/meta-app-url`).
-
-The browser talks to the Jac sample API, not DynamoDB. CORS is already open
-on single-process `jac start` (`allow_origins=['*']`), so CloudFront → local
-or remote Jac API works without extra headers.
+The product UI (`workspace/client`) is hosted on private S3 behind CloudFront.
+`cdk deploy` syncs assets, injects `config.js` (API URL + shared key), and
+prints `MetaAppUrl` (SSM `/wirejac/dev/meta-app-url`). The browser calls the
+cloud samples API — never DynamoDB.
 
 ## Run With Live Agents
 
