@@ -29,6 +29,16 @@ Without `WIREJAC_SAMPLES_TABLE`, the server keeps an in-memory store (fine for
 mock runs). Deploy and stack details: [`infrastructure/README.md`](infrastructure/README.md).
 Server contract: [`workspace/server/api-spec.md`](workspace/server/api-spec.md).
 
+## Meta app hosting (S3 + CloudFront)
+
+The product UI (`workspace/client`, the accelerometer Meta app) is hosted on
+private S3 behind CloudFront. `cdk deploy` syncs those static files and prints
+`MetaAppUrl` (also SSM `/wirejac/dev/meta-app-url`).
+
+The browser talks to the Jac sample API, not DynamoDB. CORS is already open
+on single-process `jac start` (`allow_origins=['*']`), so CloudFront → local
+or remote Jac API works without extra headers.
+
 ## Run With Live Agents
 
 ```bash

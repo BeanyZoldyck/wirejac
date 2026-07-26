@@ -71,6 +71,9 @@ Errors:
 
 ## Server to Client
 
+The Meta app (product UI on CloudFront) calls this HTTP API. It must not
+query DynamoDB directly from the browser.
+
 `GET /api/samples?session_id=<id>`
 
 Response `200`:

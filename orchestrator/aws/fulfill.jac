@@ -13,7 +13,8 @@ import from orchestrator.aws.contracts { InfraKind, InfraRequest }
 
 """Resources the infrastructure worker has already defined in CDK."""
 glob FULFILLED_RESOURCES: dict[str, InfraKind] = {
-    "SamplesTable": InfraKind.DATA
+    "SamplesTable": InfraKind.DATA,
+    "MetaAppHosting": InfraKind.HOSTING
 };
 
 

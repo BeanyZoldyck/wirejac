@@ -40,3 +40,24 @@ test('samples table is provisioned for the server API', () => {
     Value: 'wirejac-samples',
   });
 });
+
+test('meta app is hosted on private S3 behind CloudFront', () => {
+  const template = synth();
+
+  template.resourceCountIs('AWS::CloudFront::Distribution', 1);
+  template.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
+
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/wirejac/dev/meta-app-url',
+    Type: 'String',
+  });
+
+  template.hasResourceProperties('AWS::S3::Bucket', {
+    PublicAccessBlockConfiguration: {
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    },
+  });
+});
