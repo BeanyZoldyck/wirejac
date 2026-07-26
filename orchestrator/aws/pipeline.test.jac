@@ -273,14 +273,17 @@ test "infra request defaults to unfulfilled" {
 }
 
 
-test "server infra needs include SamplesTable in the catalog" {
+test "server infra needs include SamplesTable and SamplesApi in the catalog" {
     needs = server_infra_needs("req-catalog");
-    assert len(needs) == 1;
+    assert len(needs) == 2;
     assert needs[0].resource_name == "SamplesTable";
     assert needs[0].kind == InfraKind.DATA;
+    assert needs[1].resource_name == "SamplesApi";
+    assert needs[1].kind == InfraKind.RUNTIME;
     assert infra_catalog_ready(needs);
     resolved = resolve_against_catalog(needs);
     assert resolved[0].fulfilled;
+    assert resolved[1].fulfilled;
 }
 
 
