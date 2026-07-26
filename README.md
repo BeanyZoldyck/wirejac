@@ -7,8 +7,27 @@ This repository contains a runnable Jac-native autonomous agent graph for an emb
 - A current Jac installation.
 - Node and npm for the demo client validation.
 - An OpenRouter key for live agents.
+- Optional: AWS CLI profile `wirejac` and `boto3` if the server should use DynamoDB.
 
 The configured default model is `deepseek/deepseek-v4-flash`. Override it with `OPENROUTER_MODEL` if necessary.
+
+## AWS samples store
+
+Durable accelerometer history lives in DynamoDB table `wirejac-samples`
+(`WirejacDevStack`, `us-west-2`). The table name is also published at SSM
+`/wirejac/dev/samples-table-name`.
+
+Point the server at the deployed table:
+
+```bash
+export WIREJAC_SAMPLES_TABLE=wirejac-samples
+export WIREJAC_AWS_REGION=us-west-2
+export WIREJAC_AWS_PROFILE=wirejac
+```
+
+Without `WIREJAC_SAMPLES_TABLE`, the server keeps an in-memory store (fine for
+mock runs). Deploy and stack details: [`infrastructure/README.md`](infrastructure/README.md).
+Server contract: [`workspace/server/api-spec.md`](workspace/server/api-spec.md).
 
 ## Run With Live Agents
 
@@ -77,7 +96,7 @@ Set `WIREJAC_EVENT_FILE` to redirect the JSONL sink, as the test suite does.
 
 ```text
 workspace/client  - editable accelerometer dashboard
-workspace/server  - Jac API placeholder
+workspace/server  - Jac samples API (memory or DynamoDB)
 workspace/device  - restricted device Jac source
 ```
 
