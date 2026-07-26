@@ -1,0 +1,53 @@
+// Matrix loader — the animated grid from assets/matrix-loader.svg, inlined so
+// it works without relying on the asset folder being served in the build.
+const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 92 92">
+  <defs>
+    <filter id="hdr-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.1" result="blur1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5.6" result="blur2"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10.5" result="blur3"/>
+      <feColorMatrix in="blur1" type="matrix" result="glow1" values="0 0 0 0 0.424 0 0 0 0 0.706 0 0 0 0 1.000 0 0 0 0.560 0"/>
+      <feColorMatrix in="blur2" type="matrix" result="glow2" values="0 0 0 0 0.424 0 0 0 0 0.706 0 0 0 0 1.000 0 0 0 0.350 0"/>
+      <feColorMatrix in="blur3" type="matrix" result="glow3" values="0 0 0 0 0.424 0 0 0 0 0.706 0 0 0 0 1.000 0 0 0 0.210 0"/>
+      <feMerge><feMergeNode in="glow3"/><feMergeNode in="glow2"/><feMergeNode in="glow1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g>
+  <rect x="0" y="0" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="19" y="0" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="38" y="0" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="57" y="0" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="76" y="0" width="16" height="16" rx="2" fill="#3E6F9D"/>
+  <rect x="0" y="19" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="19" y="19" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="38" y="19" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="57" y="19" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="76" y="19" width="16" height="16" rx="2" fill="#3E6F9D"/>
+  <rect x="0" y="38" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="19" y="38" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="38" y="38" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="57" y="38" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="76" y="38" width="16" height="16" rx="2" fill="#3E6F9D"/>
+  <rect x="0" y="57" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="19" y="57" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="38" y="57" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="57" y="57" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="76" y="57" width="16" height="16" rx="2" fill="#3E6F9D"/>
+  <rect x="0" y="76" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="19" y="76" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="38" y="76" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="57" y="76" width="16" height="16" rx="2" fill="#3E6F9D"/><rect x="76" y="76" width="16" height="16" rx="2" fill="#3E6F9D"/>
+  </g>
+  <g filter="url(#hdr-glow)">
+  <rect x="0" y="0" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="19" y="0" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="38" y="0" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="57" y="0" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="76" y="0" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="0" y="19" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="76" y="19" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="0" y="38" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="76" y="38" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="0" y="57" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.580;0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="76" y="57" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="0" y="76" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.440;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="19" y="76" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="38" y="76" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="57" y="76" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  <rect x="76" y="76" width="16" height="16" rx="2" fill="#6cb4ff"><animate attributeName="opacity" values="0.000;0.000;0.000;0.000;0.000;0.000;0.000;0.000;1.000;0.860;0.720;0.580;0.440;0.000;0.000;0.000" dur="0.667s" repeatCount="indefinite"/></rect>
+  </g>
+</svg>`;
+
+export function MatrixLoader({ size = 26 }: { size?: number }) {
+  return (
+    <span
+      style={{ display: "inline-flex", width: size, height: size }}
+      dangerouslySetInnerHTML={{ __html: SVG }}
+    />
+  );
+}
+
+export default MatrixLoader;
+
+// touch
