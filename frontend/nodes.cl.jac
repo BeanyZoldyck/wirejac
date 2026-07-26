@@ -18,7 +18,9 @@ import from "@xyflow/react" { Handle, Position }
 import from .components.ui.card { Card, CardHeader, CardTitle, CardContent }
 import from .components.ui.badge { Badge }
 import from .Loader { Loader }
-import from "./components/ui/animated-icons" { CoordinatorIcon, WorkerIcon, DeploymentIcon, MonitoringIcon }
+# TypeScript components remain in the project source tree while Jac emits
+# client modules to .jac/client/compiled.
+import from "../../../components/ui/animated-icons" { CoordinatorIcon, WorkerIcon, DeploymentIcon, MonitoringIcon }
 
 # ---- Helpers ----------------------------------------------------------------
 

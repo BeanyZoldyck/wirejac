@@ -7,7 +7,9 @@ bottom monitoring strip — all animated by a single mock run clock.
 """
 
 import from react { useEffect }
-import from "./components/ui/ai-prompt-box" { PromptInputBox }
+# Client bundles are emitted to .jac/client/compiled; this reaches the retained
+# TypeScript UI component from that generated location.
+import from "../../../components/ui/ai-prompt-box" { PromptInputBox }
 import from .Sidebar { Sidebar }
 import from .GraphCanvas { GraphCanvas }
 import from .ChatPanel { ChatPanel }

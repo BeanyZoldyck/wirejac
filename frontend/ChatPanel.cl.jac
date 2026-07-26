@@ -2,8 +2,9 @@
 inline tool-call blocks, and a docked prompt box. Driven by the run clock."""
 
 import from .run_script { chat_upto }
-import from "./components/ui/tool-calls-section" { ToolCallsSection }
-import from "./components/ui/ai-prompt-box" { PromptInputBox }
+import from "../../../components/ui/tool-calls-section" { ToolCallsSection }
+# See frontend.cl.jac: client bundles resolve imports from .jac/client/compiled.
+import from "../../../components/ui/ai-prompt-box" { PromptInputBox }
 import from .Thinking { Thinking }
 
 def:pub ChatPanel(prompt: str, clock: int) -> JsxElement {
