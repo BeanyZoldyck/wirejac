@@ -1,0 +1,46 @@
+[project]
+name = "wirejac-hardware"
+version = "0.1.0"
+description = "Jac-native hardware planning, visualization, deployment, and verification service"
+entry-point = "main.jac"
+kind = "service"
+jac-version = "==0.34.7"
+requires-python = ">=3.12"
+
+[dependencies]
+esptool = "==5.3.1"
+littlefs-python = "==0.18.0"
+mpremote = "==1.28.0"
+pyserial = "==3.5"
+wokwi-client = "==0.4.0"
+
+[dev-dependencies]
+pytest = ">=8.4,<9"
+pytest-asyncio = ">=1.1,<2"
+
+[serve]
+port = 8000
+
+[scale.server]
+host = "127.0.0.1"
+docs_enabled = true
+
+[scale.admin]
+enabled = false
+
+[scale.jwt]
+secret = "${WIREJAC_JWT_SECRET:-wirejac-localhost-development-only}"
+
+[test]
+directory = "tests"
+verbose = true
+fail_fast = true
+
+[check]
+enforce_access = true
+
+[check.lint]
+select = ["default"]
+
+[dev]
+test_jobs = "1"

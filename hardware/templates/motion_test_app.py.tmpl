@@ -1,0 +1,137 @@
+"""WireJac-reviewed phone-snatch motion test application."""
+
+import math
+import time
+
+from machine import I2C, Pin
+
+from drivers.mpu6050 import MPU6050
+from wirejac_config import (
+    BUILD_ID,
+    COOLDOWN_MS,
+    GYRO_THRESHOLD_DPS,
+    HEARTBEAT_MS,
+    I2C_ADDRESS,
+    INGEST_URL,
+    LINEAR_ACCEL_THRESHOLD_G,
+    PIN_BUTTON,
+    PIN_SCL,
+    PIN_SDA,
+    SAMPLE_HZ,
+    TRIGGER_WINDOW_MS,
+)
+from wirejac_events import emit
+from wirejac_http import post_json
+
+try:
+    from wirejac_secrets import AUTHORIZATION
+except ImportError:
+    AUTHORIZATION = ""
+
+
+def _magnitude(vector):
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def _publish(payload):
+    if not INGEST_URL:
+        return
+    try:
+        status = post_json(INGEST_URL, payload, AUTHORIZATION)
+        emit("backend.delivery", build=BUILD_ID, status=status)
+    except Exception as exc:
+        emit("backend.delivery_failed", build=BUILD_ID, error=str(exc))
+
+
+def run():
+    button = Pin(PIN_BUTTON, Pin.IN, Pin.PULL_UP)
+    i2c = I2C(0, sda=Pin(PIN_SDA), scl=Pin(PIN_SCL), freq=400000)
+    addresses = i2c.scan()
+    if I2C_ADDRESS not in addresses:
+        raise RuntimeError("MPU6050 address 0x68 not found; scan=%s" % addresses)
+
+    sensor = MPU6050(i2c, I2C_ADDRESS)
+    identity = sensor.initialize()
+    emit(
+        "sensor.detected",
+        build=BUILD_ID,
+        bus="i2c0",
+        address="0x%02x" % I2C_ADDRESS,
+        identity="0x%02x" % identity,
+    )
+    emit("wirejac.ready", build=BUILD_ID, self_test="pass", recording=False)
+
+    interval_ms = max(1, int(1000 / SAMPLE_HZ))
+    recording = False
+    previous_button = button.value()
+    last_button_press = time.ticks_add(time.ticks_ms(), -250)
+    last_sample_event = time.ticks_add(time.ticks_ms(), -250)
+    last_heartbeat = time.ticks_ms()
+    last_trigger = time.ticks_add(time.ticks_ms(), -COOLDOWN_MS)
+    last_accel_spike = time.ticks_add(time.ticks_ms(), -TRIGGER_WINDOW_MS - 1)
+    last_gyro_spike = time.ticks_add(time.ticks_ms(), -TRIGGER_WINDOW_MS - 1)
+
+    while True:
+        loop_started = time.ticks_ms()
+        accel, gyro, temperature = sensor.read()
+        linear_accel = abs(_magnitude(accel) - 1.0)
+        angular_speed = _magnitude(gyro)
+
+        current_button = button.value()
+        if (
+            previous_button == 1
+            and current_button == 0
+            and time.ticks_diff(loop_started, last_button_press) >= 200
+        ):
+            last_button_press = loop_started
+            recording = not recording
+            payload = emit(
+                "recording.started" if recording else "recording.stopped",
+                build=BUILD_ID,
+            )
+            _publish(payload)
+        previous_button = current_button
+
+        if recording and time.ticks_diff(loop_started, last_sample_event) >= 250:
+            last_sample_event = loop_started
+            payload = emit(
+                "motion.sample",
+                build=BUILD_ID,
+                accel_g=[round(value, 3) for value in accel],
+                gyro_dps=[round(value, 3) for value in gyro],
+                temperature_c=round(temperature, 2),
+            )
+            _publish(payload)
+
+        if linear_accel >= LINEAR_ACCEL_THRESHOLD_G:
+            last_accel_spike = loop_started
+        if angular_speed >= GYRO_THRESHOLD_DPS:
+            last_gyro_spike = loop_started
+        combined_motion = (
+            time.ticks_diff(loop_started, last_accel_spike) <= TRIGGER_WINDOW_MS
+            and time.ticks_diff(loop_started, last_gyro_spike) <= TRIGGER_WINDOW_MS
+            and abs(time.ticks_diff(last_accel_spike, last_gyro_spike))
+            <= TRIGGER_WINDOW_MS
+        )
+        if (
+            recording
+            and combined_motion
+            and time.ticks_diff(loop_started, last_trigger) >= COOLDOWN_MS
+        ):
+            last_trigger = loop_started
+            payload = emit(
+                "snatch.detected",
+                build=BUILD_ID,
+                linear_accel_g=round(linear_accel, 3),
+                gyro_dps=round(angular_speed, 3),
+                temperature_c=round(temperature, 2),
+            )
+            _publish(payload)
+
+        if time.ticks_diff(loop_started, last_heartbeat) >= HEARTBEAT_MS:
+            last_heartbeat = loop_started
+            emit("wirejac.heartbeat", build=BUILD_ID, recording=recording)
+
+        elapsed = time.ticks_diff(time.ticks_ms(), loop_started)
+        if elapsed < interval_ms:
+            time.sleep_ms(interval_ms - elapsed)

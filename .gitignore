@@ -1,0 +1,14 @@
+.jac/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+.env
+jac.local.toml
+
+.wirejac/
+artifacts/
+runs/
+*.bin
+*.log
+
