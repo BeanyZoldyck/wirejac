@@ -1,0 +1,28 @@
+[project]
+name = "wirejac-agent-graph"
+version = "0.1.0"
+description = "Jac-native autonomous agent graph for embedded WireJac projects"
+entry-point = "main.jac"
+kind = "api-service"
+
+[run]
+main = true
+cache = true
+topology_index = true
+diagnostics = "error"
+
+[serve]
+port = 8000
+main = true
+
+[test]
+directory = "tests"
+verbose = false
+
+[build]
+typecheck = true
+dir = ".jac"
+
+[scripts]
+demo = "jac run main.jac --no-cache"
+test = "jac test tests/wirejac.jac"

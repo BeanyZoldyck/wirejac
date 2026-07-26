@@ -435,10 +435,11 @@ def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, a
 
 
 def _emit_event(event):
-    _EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    event_file = pathlib.Path(os.environ.get("WIREJAC_EVENT_FILE", str(_EVENT_FILE)))
+    event_file.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(event)
     payload["timestamp"] = payload.get("timestamp") or _utc_now()
-    with _EVENT_FILE.open("a", encoding="utf-8") as stream:
+    with event_file.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, separators=(",", ":")) + "\n")
     # Dashboard placeholder: replace this file sink with SSE/WebSocket publishing.
     return payload["timestamp"]

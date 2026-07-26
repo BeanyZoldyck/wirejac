@@ -30,13 +30,14 @@ node Coordinator {
         visitor.results = {};
         visitor.failed = False;
         workspaces: list[dict] = [];
-        for workspace in [self ->:Dispatch:->][?:Workspace] {
-            workspaces.append({
-                "name": workspace.name,
-                "path": workspace.path,
-                "skill_path": workspace.skill_path,
-                "spec_path": workspace.spec_path
-            });
+        for workspace in [self ->:Dispatch:->][?:Client] {
+            workspaces.append(workspace_context(workspace));
+        }
+        for workspace in [self ->:Dispatch:->][?:Server] {
+            workspaces.append(workspace_context(workspace));
+        }
+        for workspace in [self ->:Dispatch:->][?:Device] {
+            workspaces.append(workspace_context(workspace));
         }
         try {
             visitor.plan = plan_change(visitor.prompt, workspaces);
@@ -223,7 +224,7 @@ edge Project {}
 glob project_coordinator: Coordinator | None = None;
 
 
-walker:pub ChangeRequest {
+walker ChangeRequest {
     has prompt: str,
         request_id: str = "",
         plan: ImpactPlan = ImpactPlan(),
@@ -272,7 +273,19 @@ walker:pub ChangeRequest {
             report self.activations;
             disengage;
         }
-        for workspace in [here ->:Dispatch:->][?:Workspace] {
+        for workspace in [here ->:Dispatch:->][?:Client] {
+            if workspace.name in self.plan.selected {
+                self.record(workspace.name, ActivationState.QUEUED, "Selected by Coordinator");
+                visit workspace;
+            }
+        }
+        for workspace in [here ->:Dispatch:->][?:Server] {
+            if workspace.name in self.plan.selected {
+                self.record(workspace.name, ActivationState.QUEUED, "Selected by Coordinator");
+                visit workspace;
+            }
+        }
+        for workspace in [here ->:Dispatch:->][?:Device] {
             if workspace.name in self.plan.selected {
                 self.record(workspace.name, ActivationState.QUEUED, "Selected by Coordinator");
                 visit workspace;
@@ -337,20 +350,34 @@ walker:pub ChangeRequest {
 }
 
 
+walker:pub SubmitChange {
+    has prompt: str;
+
+    can submit with Root entry {
+        request = ChangeRequest(prompt=self.prompt);
+        root() spawn request;
+        disengage;
+    }
+}
+
+
 walker:pub GraphSnapshot {
+    has reports: list[dict] = [];
+
     can begin with Root entry {
         visit ensure_graph();
     }
 
     can collect with Coordinator entry {
         nodes: list[dict] = [{"id": here.name, "kind": "coordinator", "agentic": True}];
-        for workspace in [here ->:Dispatch:->][?:Workspace] {
-            nodes.append({
-                "id": workspace.name,
-                "kind": workspace.kind.value,
-                "agentic": True,
-                "path": workspace.path
-            });
+        for workspace in [here ->:Dispatch:->][?:Client] {
+            nodes.append(workspace_snapshot(workspace));
+        }
+        for workspace in [here ->:Dispatch:->][?:Server] {
+            nodes.append(workspace_snapshot(workspace));
+        }
+        for workspace in [here ->:Dispatch:->][?:Device] {
+            nodes.append(workspace_snapshot(workspace));
         }
         deployments = [here ->:Dispatch:-> ->:ReadyToDeploy:->][?:Deployment];
         monitors = [here ->:Dispatch:-> ->:ReadyToDeploy:-> ->:Verify:->][?:Monitoring];
@@ -401,12 +428,41 @@ def validate_plan(plan: ImpactPlan, workspaces: list[dict]) -> str {
 }
 
 
+def workspace_context(workspace: Workspace) -> dict {
+    return {
+        "name": workspace.name,
+        "path": workspace.path,
+        "skill_path": workspace.skill_path,
+        "spec_path": workspace.spec_path
+    };
+}
+
+
+def workspace_snapshot(workspace: Workspace) -> dict {
+    return {
+        "id": workspace.name,
+        "kind": workspace.kind.value,
+        "agentic": True,
+        "path": workspace.path
+    };
+}
+
+
 def ensure_graph() -> Coordinator {
     global project_coordinator;
     if project_coordinator is not None {
         return project_coordinator;
     }
     graph_root = root();
+    try {
+        existing = [graph_root ->:Project:->][?:Coordinator];
+        if existing {
+            project_coordinator = existing[0];
+            return existing[0];
+        }
+    } except Exception {
+        # Development schema changes can leave stale anchors in a local store.
+    }
     coordinator = (graph_root +>:Project():+> Coordinator())[0];
     client = Client(
         name="client",

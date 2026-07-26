@@ -1,7 +1,12 @@
 """WireJac agent graph entry point."""
 
 import os;
-import from orchestrator.graph { ChangeRequest, ensure_graph }
+import from orchestrator.graph {
+    ChangeRequest,
+    GraphSnapshot,
+    SubmitChange,
+    ensure_graph
+}
 
 
 with entry {

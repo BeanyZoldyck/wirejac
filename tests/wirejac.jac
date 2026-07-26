@@ -36,6 +36,7 @@ test "impact plans require complete routing decisions" {
 
 test "mock request traverses the client-only route" {
     os.environ["WIREJAC_MOCK"] = "1";
+    os.environ["WIREJAC_EVENT_FILE"] = "/tmp/wirejac-test-events.jsonl";
     ensure_graph();
     request = ChangeRequest(
         prompt="Make the sample count more prominent",

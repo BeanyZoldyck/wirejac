@@ -1,0 +1,8 @@
+orchestrator/.jac/cache
+.jac
+.env
+runtime/events/*
+!runtime/events/.gitkeep
+runtime/snapshots/*
+!runtime/snapshots/.gitkeep
+JacHacks_SF_Hacker_Guide.pdf
