@@ -4,6 +4,7 @@ The graph and contracts remain Jac-native. Complex host operations are kept in
 this Jac module's Python interop block so there is no separate agent harness.
 """
 
+import os;
 import from typing { cast }
 import from orchestrator.models {
     Activation,
@@ -12,6 +13,12 @@ import from orchestrator.models {
     DeploymentResult,
     ImpactPlan,
     MonitorResult
+}
+import from orchestrator.aws.bridge { is_aws_intent, validate_aws, deploy_aws }
+import from orchestrator.aws.pipeline { ApprovalGrant }
+import from orchestrator.aws.fulfill {
+    server_infra_needs,
+    intent_for_server_infra
 }
 
 ::py::
@@ -339,6 +346,33 @@ def _read_workspace_context(workspaces):
 
 def _plan_change(prompt, workspaces):
     if os.environ.get("WIREJAC_MOCK") == "1":
+        text = (prompt or "").lower()
+        needs_store = any(
+            token in text
+            for token in (
+                "store",
+                "history",
+                "database",
+                "persist",
+                "dynamodb",
+                "samples table",
+            )
+        )
+        if needs_store:
+            return {
+                "selected": ["server", "client"],
+                "skipped": {"device": "No firmware change"},
+                "tasks": {
+                    "server": "Expose durable sample ingest/query for: " + prompt,
+                    "client": "Show sample history from the server API for: " + prompt,
+                },
+                "acceptance": [
+                    "GET /api/samples returns stored history",
+                    "No runtime errors",
+                ],
+                "contract_change_expected": False,
+                "deployment_intent": "aws_cdk",
+            }
         return {
             "selected": ["client"],
             "skipped": {"server": "No API change", "device": "No firmware change"},
@@ -348,7 +382,7 @@ def _plan_change(prompt, workspaces):
             "deployment_intent": "hot_reload",
         }
     context = _read_workspace_context(workspaces)
-    system = """You are the WireJac coordinator. Select only affected workspaces from client, server, and device. Return JSON only with keys selected (array), skipped (object with reasons), tasks (object), acceptance (array), contract_change_expected (boolean), and deployment_intent (hot_reload, restart_server, or prepare_device). Every unselected workspace must appear in skipped. Do not modify files."""
+    system = """You are the WireJac coordinator. Select only affected workspaces from client, server, and device. Return JSON only with keys selected (array), skipped (object with reasons), tasks (object), acceptance (array), contract_change_expected (boolean), and deployment_intent (hot_reload, restart_server, prepare_device, aws_cdk, deploy_backend, or provision_infra). Use aws_cdk/provision_infra when the server needs new or undeployed AWS resources such as DynamoDB. Every unselected workspace must appear in skipped. Do not modify files."""
     message = _openrouter([
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps({"prompt": prompt, "workspaces": context})},
@@ -549,8 +583,47 @@ def emit_activation(event: Activation) -> None {
 }
 
 
-def deploy(selected: list[str], intent: str) -> DeploymentResult {
-    data = cast(dict, _deploy(selected, intent));
+def deploy(
+    selected: list[str],
+    intent: str,
+    request_id: str = ""
+) -> DeploymentResult {
+    rid = request_id if request_id else "anonymous";
+    # Server durable-storage needs upgrade a plain restart into the AWS pipeline.
+    effective_intent = intent;
+    if "server" in selected and not is_aws_intent(effective_intent) {
+        effective_intent = intent_for_server_infra(server_infra_needs(rid));
+    }
+
+    # AWS CDK path: phase one validates and stops at the approval gate. A second
+    # call with WIREJAC_APPROVAL_HASH (+ WIREJAC_CONFIRM_DEPLOY=1) completes it.
+    if is_aws_intent(effective_intent) {
+        if os.environ.get("WIREJAC_MOCK", "") == "1" {
+            needs = server_infra_needs(rid);
+            names = ", ".join([req.resource_name for req in needs]);
+            return DeploymentResult(
+                success=True,
+                awaiting_approval=True,
+                summary=(
+                    f"Mocked AWS validation for {effective_intent} "
+                    + f"({names}); awaiting approval"
+                ),
+                artifact="mock-change-hash"
+            );
+        }
+        approval_hash = os.environ.get("WIREJAC_APPROVAL_HASH", "");
+        if approval_hash and os.environ.get("WIREJAC_CONFIRM_DEPLOY", "") == "1" {
+            grant = ApprovalGrant(
+                request_id=rid,
+                change_hash=approval_hash,
+                approved_by=os.environ.get("WIREJAC_APPROVED_BY", "operator")
+            );
+            return deploy_aws(rid, grant);
+        }
+        return validate_aws(rid);
+    }
+
+    data = cast(dict, _deploy(selected, effective_intent));
     return DeploymentResult(
         success=cast(bool, data.get("success", False)),
         summary=cast(str, data.get("summary", "")),

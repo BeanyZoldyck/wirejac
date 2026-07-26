@@ -42,7 +42,7 @@ test "mock request traverses the client-only route" {
         prompt="Make the sample count more prominent",
         request_id="test-client-route"
     );
-    root() spawn request;
+    root spawn request;
 
     assert not request.failed;
     assert request.plan.selected == ["client"];
@@ -66,10 +66,40 @@ test "device deployment stops at the pipeline placeholder" {
 }
 
 
+test "aws intent routes to the approval gate in mock mode" {
+    os.environ["WIREJAC_MOCK"] = "1";
+    result = deploy(["server"], "aws_cdk", "test-aws-route");
+    assert result.success;
+    assert result.awaiting_approval;
+    assert result.artifact == "mock-change-hash";
+}
+
+
+test "store history prompt stops at aws approval in mock mode" {
+    os.environ["WIREJAC_MOCK"] = "1";
+    os.environ["WIREJAC_EVENT_FILE"] = "/tmp/wirejac-test-events-aws.jsonl";
+    ensure_graph();
+    request = ChangeRequest(
+        prompt="Store the accelerometer readings so the dashboard can show history",
+        request_id="test-aws-history"
+    );
+    root spawn request;
+
+    assert not request.failed;
+    assert "server" in request.plan.selected;
+    assert "client" in request.plan.selected;
+    assert request.plan.deployment_intent == "aws_cdk";
+    assert request.deployment_result.awaiting_approval;
+    visited = [event.node_name for event in request.activations];
+    assert "deployment" in visited;
+    assert "monitoring" not in visited;
+}
+
+
 test "graph snapshot exposes all six nodes" {
     ensure_graph();
     snapshot = GraphSnapshot();
-    root() spawn snapshot;
+    root spawn snapshot;
     data = snapshot.reports[0];
     assert data["initialized"];
     assert len(data["nodes"]) == 6;

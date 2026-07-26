@@ -13,7 +13,7 @@ with entry {
     ensure_graph();
     prompt = os.environ.get("WIREJAC_PROMPT", "");
     if prompt {
-        root() spawn ChangeRequest(prompt=prompt);
+        root spawn ChangeRequest(prompt=prompt);
     } else {
         print(
             "WireJac graph initialized. Set WIREJAC_PROMPT to run a change "

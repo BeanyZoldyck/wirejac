@@ -41,10 +41,15 @@ node Coordinator {
         }
         try {
             visitor.plan = plan_change(visitor.prompt, workspaces);
-            error = validate_plan(visitor.plan, workspaces);
-            if error {
+            plan_error = validate_plan(visitor.plan, workspaces);
+            if plan_error {
                 visitor.failed = True;
-                visitor.record(self.name, ActivationState.FAILED, "Invalid impact plan", error=error);
+                visitor.record(
+                    self.name,
+                    ActivationState.FAILED,
+                    "Invalid impact plan",
+                    error=plan_error
+                );
             } else {
                 for name in visitor.plan.selected {
                     visitor.record(
@@ -140,7 +145,8 @@ node Deployment {
         try {
             visitor.deployment_result = deploy(
                 visitor.plan.selected,
-                visitor.plan.deployment_intent
+                visitor.plan.deployment_intent,
+                visitor.request_id
             );
             if visitor.deployment_result.awaiting_approval {
                 visitor.record(
@@ -355,7 +361,7 @@ walker:pub SubmitChange {
 
     can submit with Root entry {
         request = ChangeRequest(prompt=self.prompt);
-        root() spawn request;
+        root spawn request;
         disengage;
     }
 }
@@ -448,22 +454,29 @@ def workspace_snapshot(workspace: Workspace) -> dict {
 }
 
 
+def graph_complete(coordinator: Coordinator) -> bool {
+    clients = [coordinator ->:Dispatch:->][?:Client];
+    servers = [coordinator ->:Dispatch:->][?:Server];
+    devices = [coordinator ->:Dispatch:->][?:Device];
+    return bool(clients) and bool(servers) and bool(devices);
+}
+
+
 def ensure_graph() -> Coordinator {
-    global project_coordinator;
-    if project_coordinator is not None {
+    if project_coordinator is not None and graph_complete(project_coordinator) {
         return project_coordinator;
     }
-    graph_root = root();
+    graph_root = root;
     try {
         existing = [graph_root ->:Project:->][?:Coordinator];
-        if existing {
+        if existing and graph_complete(existing[0]) {
             project_coordinator = existing[0];
             return existing[0];
         }
     } except Exception {
         # Development schema changes can leave stale anchors in a local store.
     }
-    coordinator = (graph_root +>:Project():+> Coordinator())[0];
+    coordinator = graph_root +>:Project():+> Coordinator();
     client = Client(
         name="client",
         kind=WorkspaceKind.CLIENT,

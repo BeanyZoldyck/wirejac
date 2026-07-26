@@ -1,8 +1,40 @@
+# Credentials -- never commit. AWS credentials are resolved from the local AWS
+# config or the process environment, never from this repository.
+.env
+.env.*
+*.pem
+*.key
+credentials
+credentials.json
+aws-credentials*
+
+# Jac build cache and artifacts
 orchestrator/.jac/cache
 .jac
-.env
+.jac/
+__jac_gen__/
+*.jab
+
+# Pipeline runtime artifacts. Keep the directory structure via .gitkeep.
 runtime/events/*
 !runtime/events/.gitkeep
 runtime/snapshots/*
 !runtime/snapshots/.gitkeep
+runtime/logs/
+
+# Python / pytest
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node / CDK
+node_modules/
+cdk.out/
+*.tsbuildinfo
+
+# Editor and OS
+.DS_Store
+*.swp
+
+# Local docs not part of the repo
 JacHacks_SF_Hacker_Guide.pdf
