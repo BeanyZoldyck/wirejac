@@ -1,0 +1,3 @@
+# compiled Swift binary (regenerate: swiftc -O -o wirejac main.swift -framework Cocoa -framework WebKit)
+/wirejac
+.build/
