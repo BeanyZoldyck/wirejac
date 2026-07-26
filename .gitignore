@@ -1,7 +1,5 @@
 # Credentials -- never commit. AWS credentials are resolved from the local AWS
 # config or the process environment, never from this repository.
-.env
-.env.*
 *.pem
 *.key
 credentials

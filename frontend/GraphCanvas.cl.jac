@@ -40,13 +40,14 @@ def:pub GraphCanvas(clock: int, simple: bool, onSetSimple: Callable[[bool], None
                 "status": node_status(n["id"], clock),
                 "revealed": node_revealed(n["id"], clock),
                 "simple": simple
+                "revealed": node_revealed(n["id"], events)
             }
         });
     }
 
     edges: list[dict[str, any]] = [];
     for e in RUN_EDGES {
-        both = node_revealed(e["source"], clock) and node_revealed(e["target"], clock);
+        both = node_revealed(e["source"], events) and node_revealed(e["target"], events);
         eid = f"{e['source']}-{e['target']}";
         if e["kind"] == "feedback" {
             edges.append({
@@ -56,7 +57,7 @@ def:pub GraphCanvas(clock: int, simple: bool, onSetSimple: Callable[[bool], None
                 "hidden": not both, "animated": True
             });
         } else {
-            active = node_status(e["target"], clock) == "working";
+            active = node_status(e["target"], events) == "working";
             edges.append({
                 "id": eid, "source": e["source"], "target": e["target"],
                 "hidden": not both, "animated": active

@@ -1,12 +1,44 @@
-"""wirejac - Server-Side Data Layer.
+"""Server bridge from the Wirejac frontend to the real OSP agent graph."""
 
-Phase 0 foundation: the guestbook has been removed. Real OSP nodes/walkers for
-the orchestration graph (Coordinator/Worker/Deployment/Monitoring + planner/
-builder/deploy/monitor walkers) arrive in Phase 8 (see UI-UX-PLAN.md §8).
+import from orchestrator.graph { ChangeRequest, GraphSnapshot, ensure_graph }
+import from orchestrator.adapters { request_events, request_history }
 
-A single trivial endpoint keeps this a valid, non-empty server module.
-"""
 
 def:pub ping() -> str {
     return "ok";
+}
+
+
+def:pub submit_build(prompt: str) -> dict {
+    ensure_graph();
+    request = ChangeRequest(prompt=prompt);
+    root() spawn request;
+    return {
+        "id": request.request_id,
+        "name": prompt,
+        "prompt": prompt,
+        "status": "failed" if request.failed else "done",
+        "events": request_events(request.request_id)
+    };
+}
+
+
+def:pub get_request_events(request_id: str) -> list[dict] {
+    return request_events(request_id);
+}
+
+
+def:pub get_request_history() -> list[dict] {
+    return request_history();
+}
+
+
+def:pub get_graph_snapshot() -> dict {
+    ensure_graph();
+    snapshot = GraphSnapshot();
+    root() spawn snapshot;
+    if snapshot.reports {
+        return snapshot.reports[0];
+    }
+    return {"initialized": False, "nodes": [], "edges": []};
 }

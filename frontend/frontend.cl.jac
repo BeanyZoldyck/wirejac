@@ -1,14 +1,12 @@
-"""wirejac — client entry (mission-control shell with projects sidebar).
+"""Wirejac dashboard bound to the real Jac OSP orchestration graph."""
 
-A left sidebar lists build projects (folders); the main area shows either the
-chat-first landing (New build) or the selected project's dashboard: a top
-pipeline bar, a 70/30 split (React Flow graph + streaming conversation), and a
-bottom monitoring strip — all animated by a single mock run clock.
-"""
-
+sv import from .endpoints {
+    submit_build,
+    get_request_events,
+    get_request_history,
+    get_graph_snapshot
+}
 import from react { useEffect }
-# Client bundles are emitted to .jac/client/compiled; this reaches the retained
-# TypeScript UI component from that generated location.
 import from "../../../components/ui/ai-prompt-box" { PromptInputBox }
 import from .Sidebar { Sidebar }
 import from .GraphCanvas { GraphCanvas }
@@ -26,63 +24,83 @@ def:pub Dashboard(prompt: str, title: str) -> JsxElement {
         simpleView = v;
     }
 
-    # One run clock ticks every 200ms; everything derives from it. Ref-backed
-    # accumulator avoids setInterval stale-closure bugs; cleanup on unmount.
-    useEffect(lambda {
-        idRef.current = setInterval(lambda {
-            clockRef.current = clockRef.current + 200;
-            clock = clockRef.current;
-            if clockRef.current >= 24000 {
-                clearInterval(idRef.current);
+    async def refresh() {
+        if request_id and not request_id.startswith("pending-") {
+            events = await get_request_events(request_id);
+            for event in events {
+                if event.get("state") == "failed" { status = "failed"; }
+                if event.get("node") == "monitoring" and event.get("state") == "succeeded" {
+                    status = "done";
+                }
             }
-        }, 200);
-        return lambda { clearInterval(idRef.current); };
-    }, []);
+        }
+    }
+
+    useEffect(lambda {
+        refresh();
+        interval = setInterval(lambda { refresh(); }, 1000);
+        return lambda { clearInterval(interval); };
+    }, [request_id]);
 
     return <div className="h-full w-full flex flex-col bg-background text-foreground">
-        <TopBar clock={clock} title={title} />
+        <TopBar events={events} title={str(project.get("name", "Wirejac build"))} status={status} />
         <div className="flex-1 flex min-h-0">
             <div className="w-[70%] h-full">
                 <GraphCanvas clock={clock} simple={simpleView} onSetSimple={set_simple} />
             </div>
             <div className="w-[30%] h-full min-w-0">
-                <ChatPanel prompt={prompt} clock={clock} />
+                <ChatPanel prompt={str(project.get("prompt", ""))} events={events} status={status} />
             </div>
         </div>
-        <MonitoringBar clock={clock} />
+        <MonitoringBar events={events} />
     </div>;
 }
 
 def:pub app -> JsxElement {
-    # Each submitted build becomes a project { id, name, prompt, status }.
     has projects: list[dict] = [];
     has activeId: str = "";
+    has topology: dict = {};
 
-    # Dark mode: flip the whole shadcn palette by adding `.dark` to <html>.
-    can with entry {
+    async can with entry {
         document.documentElement.classList.add("dark");
+        topology = await get_graph_snapshot();
+        projects = await get_request_history();
     }
 
-    def new_build() {
-        activeId = "";
-    }
+    def new_build() { activeId = ""; }
+    def select_project(pid: str) { activeId = pid; }
 
-    def select_project(pid: str) {
-        activeId = pid;
-    }
-
-    def create_from_prompt(message: str, files: any) {
-        newid = "p" + str(len(projects) + 1);
-        proj = {"id": newid, "name": message, "prompt": message, "status": "running"};
-        projects = projects + [proj];   # rebind, never mutate
-        activeId = newid;
+    async def create_from_prompt(message: str, files: any) {
+        pending_id = "pending-" + str(Date.now());
+        pending = {
+            "id": pending_id,
+            "name": message,
+            "prompt": message,
+            "status": "running",
+            "events": []
+        };
+        projects = [pending] + projects;
+        activeId = pending_id;
+        try {
+            result = await submit_build(message);
+            projects = [result] + [project for project in projects if project["id"] != pending_id];
+            activeId = str(result["id"]);
+        } except Exception as error {
+            failed = {**pending, "status": "failed", "events": [{
+                "node": "coordinator",
+                "state": "failed",
+                "summary": "Build request failed",
+                "error": str(error)
+            }]};
+            projects = [failed] + [project for project in projects if project["id"] != pending_id];
+        }
     }
 
     active: dict = {};
     found = False;
-    for p in projects {
-        if p["id"] == activeId {
-            active = p;
+    for project in projects {
+        if project["id"] == activeId {
+            active = project;
             found = True;
         }
     }
@@ -91,13 +109,14 @@ def:pub app -> JsxElement {
         <Sidebar projects={projects} activeId={activeId} onNew={new_build} onSelect={select_project} />
         <div className="flex-1 min-w-0 h-full">
             {if found {
-                <Dashboard key={active["id"]} prompt={active["prompt"]} title={active["name"]} />
+                <Dashboard key={str(active["id"])} project={active} />
             } else {
                 <div className="h-full w-full flex flex-col items-center justify-center gap-8 p-6">
                     <div className="flex flex-col items-center gap-2 text-center">
                         <h1 className="text-4xl font-semibold tracking-tight">wirejac</h1>
                         <p className="text-muted-foreground max-w-md">
-                            Describe what you want built — wirejac plans it, wires up worker agents, deploys it, and watches it run live.
+                            Describe what you want built. The real Jac graph plans,
+                            edits, validates, deploys, and records every activation.
                         </p>
                     </div>
                     <div className="w-full max-w-2xl">

@@ -63,6 +63,24 @@ _JAC_MCP_TOOLS = {
 }
 
 
+def _load_project_env():
+    """Load local deployment variables without exposing them to agent tools."""
+    env_file = _PROJECT_ROOT / ".env"
+    if not env_file.exists():
+        return
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_project_env()
+
+
 def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -588,10 +606,74 @@ def _emit_event(event):
     event_file.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(event)
     payload["timestamp"] = payload.get("timestamp") or _utc_now()
+    sequence = 1
+    if event_file.exists():
+        for raw in event_file.read_text(encoding="utf-8").splitlines():
+            try:
+                existing = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if existing.get("request_id") == payload.get("request_id"):
+                sequence = max(sequence, int(existing.get("sequence", 0)) + 1)
+    payload["sequence"] = sequence
     with event_file.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, separators=(",", ":")) + "\n")
     # Dashboard placeholder: replace this file sink with SSE/WebSocket publishing.
     return payload["timestamp"]
+
+
+def _read_request_events(request_id):
+    event_file = pathlib.Path(os.environ.get("WIREJAC_EVENT_FILE", str(_EVENT_FILE)))
+    if not event_file.exists():
+        return []
+    events = []
+    for raw in event_file.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if event.get("request_id") == request_id:
+            events.append(event)
+    events.sort(key=lambda event: (int(event.get("sequence", 0)), event.get("timestamp", "")))
+    return events
+
+
+def _list_request_history():
+    event_file = pathlib.Path(os.environ.get("WIREJAC_EVENT_FILE", str(_EVENT_FILE)))
+    if not event_file.exists():
+        return []
+    grouped = {}
+    for raw in event_file.read_text(encoding="utf-8").splitlines():
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        request_id = event.get("request_id", "")
+        if not request_id:
+            continue
+        item = grouped.setdefault(request_id, {
+            "id": request_id,
+            "name": "Wirejac build",
+            "prompt": "",
+            "status": "running",
+            "events": [],
+        })
+        item["events"].append(event)
+        if event.get("node") in {"client", "server", "device"} and event.get("state") == "planned":
+            item["prompt"] = event.get("summary", "")
+            item["name"] = event.get("summary", "Wirejac build")
+        if event.get("state") == "failed":
+            item["status"] = "failed"
+        if event.get("node") == "monitoring" and event.get("state") == "succeeded":
+            item["status"] = "done"
+    history = list(grouped.values())
+    for item in history:
+        item["events"].sort(key=lambda event: (int(event.get("sequence", 0)), event.get("timestamp", "")))
+    history.sort(
+        key=lambda item: item["events"][-1].get("timestamp", "") if item["events"] else "",
+        reverse=True,
+    )
+    return history
 
 
 def _deploy(selected, intent):
@@ -766,4 +848,14 @@ def monitor(acceptance: list[str]) -> MonitorResult {
         summary=cast(str, data.get("summary", "")),
         errors=cast(list[str], data.get("errors", []))
     );
+}
+
+
+def request_events(request_id: str) -> list[dict] {
+    return cast(list[dict], _read_request_events(request_id));
+}
+
+
+def request_history() -> list[dict] {
+    return cast(list[dict], _list_request_history());
 }

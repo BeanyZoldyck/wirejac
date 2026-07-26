@@ -1,218 +1,112 @@
-"""Cloud sample API — DynamoDB-backed, shared team API key.
-
-Implements the same contract as workspace/server (GET/POST /api/samples,
-GET /api/health). Auth: X-Api-Key (or api_key query) must match
-WIREJAC_API_KEY. Health is public for probes.
-"""
+"""Lambda Function URL API for Wirejac accelerometer samples."""
 
 from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
-from typing import Any
+from decimal import Decimal
 
 import boto3
 
-_TABLE_NAME = os.environ["WIREJAC_SAMPLES_TABLE"]
-_API_KEY = os.environ.get("WIREJAC_API_KEY", "")
-_REGION = os.environ.get("WIREJAC_AWS_REGION", "us-west-2")
 
-_table = boto3.resource("dynamodb", region_name=_REGION).Table(_TABLE_NAME)
+TABLE = boto3.resource("dynamodb").Table(os.environ["WIREJAC_SAMPLES_TABLE"])
+API_KEY = os.environ["WIREJAC_API_KEY"]
 
 
-def _response(status: int, body: dict[str, Any], *, cors: bool = True) -> dict[str, Any]:
-    headers = {"content-type": "application/json"}
-    if cors:
-        headers.update(
-            {
-                "access-control-allow-origin": "*",
-                "access-control-allow-headers": "content-type,x-api-key",
-                "access-control-allow-methods": "GET,POST,OPTIONS",
-            }
-        )
+def response(status: int, body: dict) -> dict:
     return {
         "statusCode": status,
-        "headers": headers,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-headers": "content-type,x-api-key",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+        },
         "body": json.dumps(body),
     }
 
 
-def _headers(event: dict[str, Any]) -> dict[str, str]:
-    raw = event.get("headers") or {}
-    return {str(k).lower(): str(v) for k, v in raw.items()}
+def authorized(headers: dict) -> bool:
+    normalized = {str(key).lower(): value for key, value in headers.items()}
+    return normalized.get("x-api-key", "") == API_KEY
 
 
-def _query(event: dict[str, Any]) -> dict[str, str]:
-    params = event.get("queryStringParameters") or {}
-    return {str(k): str(v) for k, v in params.items() if v is not None}
+def parse_number(value: object, field: str) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except Exception as exc:
+        raise ValueError(f"{field} must be numeric") from exc
 
 
-def _authorized(event: dict[str, Any]) -> bool:
-    if not _API_KEY:
-        return True
-    headers = _headers(event)
-    provided = headers.get("x-api-key", "")
-    if not provided:
-        provided = _query(event).get("api_key", "")
-    return provided == _API_KEY
+def put_sample(payload: dict) -> dict:
+    device_id = str(payload.get("device_id", "")).strip()
+    if not device_id:
+        raise ValueError("device_id is required")
+    captured_at_ms = int(payload["captured_at_ms"])
+    session_id = str(payload.get("session_id") or device_id)
+    sample_id = str(payload.get("sample_id") or f"{captured_at_ms:013d}#{uuid.uuid4().hex[:8]}")
+    item = {
+        "session_id": session_id,
+        "sample_id": sample_id,
+        "device_id": device_id,
+        "captured_at_ms": captured_at_ms,
+        "x": parse_number(payload["x"], "x"),
+        "y": parse_number(payload["y"], "y"),
+        "z": parse_number(payload["z"], "z"),
+        "label": payload.get("label"),
+        "received_at_ms": int(time.time() * 1000),
+    }
+    TABLE.put_item(Item=item)
+    return {"accepted": True, "sample_id": sample_id, "session_id": session_id}
 
 
-def _new_sample_id() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-def _put_sample(item: dict[str, Any]) -> dict[str, Any]:
-    _table.put_item(
-        Item={
-            "session_id": item["session_id"],
-            "sample_id": item["sample_id"],
-            "device_id": item["device_id"],
-            "captured_at_ms": int(item["captured_at_ms"]),
-            "x": str(item["x"]),
-            "y": str(item["y"]),
-            "z": str(item["z"]),
-            "label": item["label"],
-        }
+def list_samples(session_id: str) -> dict:
+    if not session_id:
+        raise ValueError("session_id is required")
+    result = TABLE.query(
+        KeyConditionExpression="session_id = :session_id",
+        ExpressionAttributeValues={":session_id": session_id},
     )
-    return item
-
-
-def _list_samples(session_id: str) -> list[dict[str, Any]]:
-    response = _table.query(
-        KeyConditionExpression="session_id = :sid",
-        ExpressionAttributeValues={":sid": session_id},
-    )
-    rows: list[dict[str, Any]] = []
-    for raw in response.get("Items", []):
-        rows.append(
+    rows = result.get("Items", [])
+    rows.sort(key=lambda item: int(item.get("captured_at_ms", 0)))
+    samples = []
+    for item in rows:
+        samples.append(
             {
-                "sample_id": raw["sample_id"],
-                "device_id": raw["device_id"],
-                "session_id": raw["session_id"],
-                "captured_at_ms": int(raw["captured_at_ms"]),
-                "x": float(raw["x"]),
-                "y": float(raw["y"]),
-                "z": float(raw["z"]),
-                "label": raw.get("label"),
+                "session_id": item["session_id"],
+                "sample_id": item["sample_id"],
+                "device_id": item["device_id"],
+                "captured_at_ms": int(item["captured_at_ms"]),
+                "x": float(item["x"]),
+                "y": float(item["y"]),
+                "z": float(item["z"]),
+                "label": item.get("label"),
             }
         )
-    rows.sort(key=lambda row: row["captured_at_ms"])
-    return rows
+    return {"session_id": session_id, "samples": samples}
 
 
-def _parse_body(event: dict[str, Any]) -> dict[str, Any]:
-    raw = event.get("body") or ""
-    if event.get("isBase64Encoded"):
-        import base64
-
-        raw = base64.b64decode(raw).decode("utf-8")
-    if not raw:
-        return {}
-    data = json.loads(raw)
-    if not isinstance(data, dict):
-        raise ValueError("JSON body must be an object")
-    return data
-
-
-def _path(event: dict[str, Any]) -> str:
-    raw = (
-        event.get("rawPath")
-        or event.get("path")
-        or (event.get("requestContext") or {}).get("http", {}).get("path")
-        or "/"
-    )
-    return raw.rstrip("/") or "/"
-
-
-def _method(event: dict[str, Any]) -> str:
-    return (
-        (event.get("requestContext") or {}).get("http", {}).get("method")
-        or event.get("httpMethod")
-        or "GET"
-    ).upper()
-
-
-def handle_health() -> dict[str, Any]:
-    return _response(
-        200,
-        {
-            "status": "ok",
-            "service": "wirejac-sample-api",
-            "store": "dynamodb",
-        },
-    )
-
-
-def handle_get_samples(event: dict[str, Any]) -> dict[str, Any]:
-    if not _authorized(event):
-        return _response(401, {"error": "invalid or missing API key"})
-    session_id = _query(event).get("session_id", "")
-    if not session_id:
-        return _response(400, {"error": "session_id is required"})
-    return _response(
-        200,
-        {"session_id": session_id, "samples": _list_samples(session_id)},
-    )
-
-
-def handle_post_samples(event: dict[str, Any]) -> dict[str, Any]:
-    if not _authorized(event):
-        return _response(401, {"error": "invalid or missing API key"})
-    try:
-        body = _parse_body(event)
-    except (ValueError, json.JSONDecodeError) as exc:
-        return _response(400, {"error": str(exc)})
-
-    device_id = str(body.get("device_id") or "")
-    if not device_id:
-        return _response(400, {"error": "device_id is required"})
-
-    try:
-        captured_at_ms = int(body["captured_at_ms"])
-        x = float(body["x"])
-        y = float(body["y"])
-        z = float(body["z"])
-    except (KeyError, TypeError, ValueError):
-        return _response(
-            400,
-            {"error": "captured_at_ms, x, y, z are required numbers"},
-        )
-
-    session_id = str(body.get("session_id") or device_id)
-    label = body.get("label")
-    if label is not None:
-        label = str(label)
-
-    saved = _put_sample(
-        {
-            "sample_id": _new_sample_id(),
-            "device_id": device_id,
-            "session_id": session_id,
-            "captured_at_ms": captured_at_ms,
-            "x": x,
-            "y": y,
-            "z": z,
-            "label": label,
-        }
-    )
-    return _response(200, {"accepted": True, "sample_id": saved["sample_id"]})
-
-
-def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    method = _method(event)
-    path = _path(event)
-
+def handler(event: dict, _context: object) -> dict:
+    request = event.get("requestContext", {}).get("http", {})
+    method = request.get("method", "GET").upper()
+    path = request.get("path", event.get("rawPath", "/"))
     if method == "OPTIONS":
-        return _response(204, {})
-
-    if path.endswith("/api/health") and method == "GET":
-        return handle_health()
-
-    if path.endswith("/api/samples") and method == "GET":
-        return handle_get_samples(event)
-
-    if path.endswith("/api/samples") and method == "POST":
-        return handle_post_samples(event)
-
-    return _response(404, {"error": "not found"})
+        return response(204, {})
+    if path.rstrip("/") == "/api/health":
+        return response(200, {"status": "ok", "service": "wirejac-samples-api", "store": "dynamodb"})
+    if not authorized(event.get("headers") or {}):
+        return response(401, {"error": "invalid API key"})
+    try:
+        if path.rstrip("/") == "/api/samples" and method == "POST":
+            payload = json.loads(event.get("body") or "{}")
+            return response(200, put_sample(payload))
+        if path.rstrip("/") == "/api/samples" and method == "GET":
+            query = event.get("queryStringParameters") or {}
+            return response(200, list_samples(str(query.get("session_id", ""))))
+        return response(404, {"error": "not found"})
+    except (KeyError, TypeError, ValueError) as exc:
+        return response(400, {"error": str(exc)})
+    except Exception:
+        return response(503, {"error": "sample store unavailable"})

@@ -1,53 +1,45 @@
-"""Write Meta app config.js with the resolved shared API key."""
+"""Custom resource that writes runtime configuration into the Meta app bucket."""
 
 from __future__ import annotations
 
-import time
-from typing import Any
+import json
 
 import boto3
 
+
 s3 = boto3.client("s3")
-sm = boto3.client("secretsmanager")
+secrets = boto3.client("secretsmanager")
 cloudfront = boto3.client("cloudfront")
 
 
-def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    request_type = event.get("RequestType", "Create")
+def handler(event: dict, _context: object) -> dict:
     props = event["ResourceProperties"]
-    physical_id = "wirejac-meta-app-config-js"
-
-    if request_type == "Delete":
+    physical_id = f"{props['Bucket']}/config.js"
+    if event.get("RequestType") == "Delete":
         return {"PhysicalResourceId": physical_id}
 
-    secret = sm.get_secret_value(SecretId=props["SecretArn"])["SecretString"]
-    api_url = props["ApiUrl"].rstrip("/") + "/"
-    body = (
-        "window.WIREJAC = {\n"
-        f'  apiBaseUrl: "{api_url}",\n'
-        f'  apiKey: "{secret}",\n'
-        '  sessionId: "training-001"\n'
-        "};\n"
-    )
+    api_key = secrets.get_secret_value(SecretId=props["SecretArn"])["SecretString"]
+    config = {
+        "apiBaseUrl": props["ApiUrl"],
+        "apiKey": api_key,
+        "sessionId": "training-001",
+    }
+    body = "window.WIREJAC = " + json.dumps(config, separators=(",", ":")) + ";\n"
     s3.put_object(
         Bucket=props["Bucket"],
         Key="config.js",
         Body=body.encode("utf-8"),
-        ContentType="application/javascript",
-        CacheControl="no-cache, no-store, must-revalidate",
+        ContentType="application/javascript; charset=utf-8",
+        CacheControl="no-store, max-age=0",
     )
-
-    distribution_id = props.get("DistributionId") or ""
-    if distribution_id:
-        cloudfront.create_invalidation(
-            DistributionId=distribution_id,
-            InvalidationBatch={
-                "Paths": {"Quantity": 1, "Items": ["/config.js"]},
-                "CallerReference": f"wirejac-config-{int(time.time())}",
-            },
-        )
-
+    invalidation = cloudfront.create_invalidation(
+        DistributionId=props["DistributionId"],
+        InvalidationBatch={
+            "Paths": {"Quantity": 1, "Items": ["/config.js"]},
+            "CallerReference": event["RequestId"],
+        },
+    )
     return {
         "PhysicalResourceId": physical_id,
-        "Data": {"ApiUrl": api_url},
+        "Data": {"InvalidationId": invalidation["Invalidation"]["Id"]},
     }

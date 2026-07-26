@@ -139,6 +139,20 @@ export class MetaAppHosting extends Construct {
       tier: ssm.ParameterTier.STANDARD,
     });
 
+    new ssm.StringParameter(this, 'MetaAppBucketParam', {
+      parameterName: '/wirejac/dev/meta-app-bucket',
+      stringValue: this.bucket.bucketName,
+      description: 'S3 bucket holding the Wirejac Meta app',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, 'MetaAppDistributionParam', {
+      parameterName: '/wirejac/dev/meta-app-distribution-id',
+      stringValue: this.distribution.distributionId,
+      description: 'CloudFront distribution for the Wirejac Meta app',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
     new cdk.CfnOutput(this, 'MetaAppUrl', {
       value: this.url,
       description: 'HTTPS URL for the Meta app (accelerometer dashboard)',
@@ -149,6 +163,12 @@ export class MetaAppHosting extends Construct {
       value: this.bucket.bucketName,
       description: 'S3 bucket holding Meta app static assets',
       exportName: 'WirejacMetaAppBucketName',
+    });
+
+    new cdk.CfnOutput(this, 'MetaAppDistributionId', {
+      value: this.distribution.distributionId,
+      description: 'CloudFront distribution ID for cache invalidation',
+      exportName: 'WirejacMetaAppDistributionId',
     });
   }
 }
