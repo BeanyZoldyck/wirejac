@@ -8,12 +8,11 @@ kind = "fullstack"
 [jac-shadcn]
 style = "nova"
 baseColor = "zinc"
-theme = "indigo"
+theme = "orange"
 font = "geist"
 radius = "default"
 menuAccent = "subtle"
 menuColor = "default"
-
 [dependencies.npm]
 "@fontsource-variable/geist" = "*"
 react = "^18.2.0"
@@ -65,7 +64,7 @@ lib_imports = [
 [client.app_meta_data]
 title = "wirejac"
 description = "Multi-agent CI/CD orchestrator — native Jaclang OSP"
-theme_color = "#4f46e5"
+theme_color = "#f97316"
 
 [plugins.desktop]
 name = "wirejac"

@@ -1,55 +1,31 @@
-/* Animate UI-style icons — Lucide icons animated with Motion (framer-motion).
-   Per animate-ui.com/docs/icons: "Lucide Icons animated with Motion." Each node
-   kind gets its own icon; it animates continuously while `active` (the node is
-   "working") and on hover. Minimalist: thin strokes, currentColor. */
+/* Animate UI-style icons — Lucide icons animated with CSS (not framer-motion).
+   CSS keyframes (wj-icon-spin / wj-icon-pulse, defined in brand.css) run on the
+   element independently of React re-renders, so they play smoothly even though
+   the dashboard re-renders every 200ms on the run clock. Each node kind gets
+   its own icon; it animates while `active` (the node is "working"). */
 import React from "react";
-import { motion } from "framer-motion";
-import {
-  Workflow,
-  Server,
-  Monitor,
-  Cpu,
-  Rocket,
-  Activity,
-} from "lucide-react";
+import { Workflow, Server, Monitor, Cpu, Rocket, Activity } from "lucide-react";
 
 type IconProps = { className?: string; active?: boolean; size?: number };
 
-const PULSE = { scale: [1, 1.18, 1] };
-const PULSE_T = { duration: 1.4, repeat: Infinity, ease: "easeInOut" };
-const SPIN = { rotate: 360 };
-const SPIN_T = { duration: 9, repeat: Infinity, ease: "linear" };
-
 function Animated({
   Icon,
-  anim,
-  animT,
+  mode,
   className,
   active = false,
   size = 20,
-}: IconProps & { Icon: React.ComponentType<any>; anim: any; animT: any }) {
+}: IconProps & { Icon: React.ComponentType<any>; mode: "spin" | "pulse" }) {
+  const anim = active ? (mode === "spin" ? "wj-icon-spin" : "wj-icon-pulse") : "";
   return (
-    <motion.span
-      className={className}
-      style={{ display: "inline-flex" }}
-      animate={active ? anim : { scale: 1, rotate: 0 }}
-      transition={active ? animT : { duration: 0.2 }}
-      whileHover={{ scale: 1.15 }}
-    >
+    <span className={[className, "wj-icon", anim].filter(Boolean).join(" ")}>
       <Icon size={size} strokeWidth={1.75} />
-    </motion.span>
+    </span>
   );
 }
 
-export const CoordinatorIcon = (p: IconProps) => (
-  <Animated {...p} Icon={Workflow} anim={SPIN} animT={SPIN_T} />
-);
-export const DeploymentIcon = (p: IconProps) => (
-  <Animated {...p} Icon={Rocket} anim={PULSE} animT={PULSE_T} />
-);
-export const MonitoringIcon = (p: IconProps) => (
-  <Animated {...p} Icon={Activity} anim={PULSE} animT={PULSE_T} />
-);
+export const CoordinatorIcon = (p: IconProps) => <Animated {...p} Icon={Workflow} mode="spin" />;
+export const DeploymentIcon = (p: IconProps) => <Animated {...p} Icon={Rocket} mode="pulse" />;
+export const MonitoringIcon = (p: IconProps) => <Animated {...p} Icon={Activity} mode="pulse" />;
 
 const WORKER_ICONS: Record<string, React.ComponentType<any>> = {
   server: Server,
@@ -58,7 +34,7 @@ const WORKER_ICONS: Record<string, React.ComponentType<any>> = {
 };
 export const WorkerIcon = (p: IconProps & { kind?: string }) => {
   const Icon = WORKER_ICONS[(p.kind ?? "").toLowerCase()] ?? Server;
-  return <Animated {...p} Icon={Icon} anim={PULSE} animT={PULSE_T} />;
+  return <Animated {...p} Icon={Icon} mode="pulse" />;
 };
 
-// touch: trigger jac watcher copy
+// touch

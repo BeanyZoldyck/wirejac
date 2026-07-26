@@ -84,3 +84,12 @@ html {
 .wj-think-dot {
     animation: wj-think 1.2s infinite ease-in-out both;
 }
+
+/* --- Node icon animations (CSS so they survive the 200ms re-render loop) -- *
+ * framer-motion animations get reset by the dashboard's frequent re-renders;
+ * CSS animations run on the element independently, so they play smoothly.    */
+@keyframes wj-spin  { to { transform: rotate(360deg); } }
+@keyframes wj-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.16); } }
+.wj-icon { display: inline-flex; transform-origin: center; }
+.wj-icon-spin  { animation: wj-spin 6s linear infinite; }
+.wj-icon-pulse { animation: wj-pulse 1.4s ease-in-out infinite; }

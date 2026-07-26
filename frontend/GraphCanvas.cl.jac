@@ -1,9 +1,8 @@
 """React Flow canvas — driven by the run clock (see run_script.cl.jac).
 
-All node status + reveal is derived from `clock`; nodes stay in the layout so
-the view is stable, fading in via `wj-node-in` when revealed. Flow edges animate
-while their target node is actively `working` (a walker traversing); the
-feedback edge routes on the right so no line crosses behind the center nodes.
+Node status + reveal derive from `clock`. A Detailed/Simple toggle (top-right
+overlay) switches every node between the full card and a compact circle. Flow
+edges animate while their target is `working`; the feedback edge routes right.
 """
 
 import from "@xyflow/react" { ReactFlow, Background }
@@ -26,7 +25,7 @@ glob NODE_POSITIONS: dict[str, dict[str, int]] = {
     "monitoring": {"x": 360, "y": 960}
 };
 
-def:pub GraphCanvas(clock: int) -> JsxElement {
+def:pub GraphCanvas(clock: int, simple: bool, onSetSimple: Callable[[bool], None]) -> JsxElement {
     nodes: list[dict[str, any]] = [];
     for n in RUN_NODES {
         pos = NODE_POSITIONS[n["id"]];
@@ -39,7 +38,8 @@ def:pub GraphCanvas(clock: int) -> JsxElement {
                 "kind": n["kind"],
                 "subdir": n["subdir"],
                 "status": node_status(n["id"], clock),
-                "revealed": node_revealed(n["id"], clock)
+                "revealed": node_revealed(n["id"], clock),
+                "simple": simple
             }
         });
     }
@@ -64,7 +64,17 @@ def:pub GraphCanvas(clock: int) -> JsxElement {
         }
     }
 
-    return <div className="w-full h-full">
+    return <div className="relative w-full h-full">
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-lg border border-border bg-background/80 backdrop-blur p-0.5 text-xs">
+            <button
+                onClick={lambda -> None { onSetSimple(False); }}
+                className={"px-2.5 py-1 rounded-md transition-colors " + ("bg-primary text-primary-foreground" if not simple else "text-muted-foreground hover:text-foreground")}
+            >Detailed</button>
+            <button
+                onClick={lambda -> None { onSetSimple(True); }}
+                className={"px-2.5 py-1 rounded-md transition-colors " + ("bg-primary text-primary-foreground" if simple else "text-muted-foreground hover:text-foreground")}
+            >Simple</button>
+        </div>
         <ReactFlow
             nodes={nodes}
             edges={edges}

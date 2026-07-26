@@ -20,6 +20,11 @@ def:pub Dashboard(prompt: str, title: str) -> JsxElement {
     has clock: int = 0;
     has clockRef: Ref[int] = Ref(0);
     has idRef: Ref[int] = Ref(0);
+    has simpleView: bool = False;
+
+    def set_simple(v: bool) {
+        simpleView = v;
+    }
 
     # One run clock ticks every 200ms; everything derives from it. Ref-backed
     # accumulator avoids setInterval stale-closure bugs; cleanup on unmount.
@@ -38,7 +43,7 @@ def:pub Dashboard(prompt: str, title: str) -> JsxElement {
         <TopBar clock={clock} title={title} />
         <div className="flex-1 flex min-h-0">
             <div className="w-[70%] h-full">
-                <GraphCanvas clock={clock} />
+                <GraphCanvas clock={clock} simple={simpleView} onSetSimple={set_simple} />
             </div>
             <div className="w-[30%] h-full min-w-0">
                 <ChatPanel prompt={prompt} clock={clock} />
