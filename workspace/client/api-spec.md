@@ -1,14 +1,19 @@
 # Accelerometer API Contract
 
-Contract-Version: 1
+Contract-Version: 3
 Contract-ID: accelerometer-samples-v1
 
 The Meta app is static UI (S3 + CloudFront). It reads history through the
-Jac server HTTP API below — never DynamoDB from the browser.
+cloud samples API below — never DynamoDB from the browser.
+
+Authorization: send header `X-Api-Key` with the shared team key from
+deployed `config.js` (injected at `cdk deploy`; not committed).
 
 ## Server to Client
 
 `GET /api/samples?session_id=<id>`
+
+Headers: `X-Api-Key: <shared-team-key>`
 
 Response:
 

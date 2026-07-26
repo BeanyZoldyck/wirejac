@@ -13,13 +13,13 @@
         <p class="eyebrow">WireJac Motion Lab</p>
         <h1>Snatch detection dataset</h1>
       </div>
-      <div class="status"><span></span> ESP32 streaming</div>
+      <div class="status"><span></span> <span id="stream-status">connecting</span></div>
     </header>
 
     <section class="metrics" aria-label="Collection summary">
       <article><strong id="sample-count">0</strong><span>active samples</span></article>
       <article><strong>100 Hz</strong><span>sample rate</span></article>
-      <article><strong>training-001</strong><span>session</span></article>
+      <article><strong id="session-id">training-001</strong><span>session</span></article>
     </section>
 
     <section class="chart-panel">
@@ -33,6 +33,7 @@
       <canvas id="motion-chart" width="1000" height="360" aria-label="Live accelerometer chart"></canvas>
     </section>
   </main>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
