@@ -41,6 +41,29 @@ test('samples table is provisioned for the server API', () => {
   });
 });
 
+test('samples API is a Lambda Function URL with shared API key secret', () => {
+  const template = synth();
+
+  template.hasResourceProperties('AWS::Lambda::Function', {
+    FunctionName: 'wirejac-samples-api',
+    Runtime: 'python3.12',
+    Handler: 'handler.handler',
+  });
+
+  template.hasResourceProperties('AWS::Lambda::Url', {
+    AuthType: 'NONE',
+  });
+
+  template.hasResourceProperties('AWS::SecretsManager::Secret', {
+    Name: 'wirejac/dev/samples-api-key',
+  });
+
+  template.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/wirejac/dev/samples-api-url',
+    Type: 'String',
+  });
+});
+
 test('meta app is hosted on private S3 behind CloudFront', () => {
   const template = synth();
 
