@@ -19,9 +19,10 @@ def:pub MonitoringBar(events: list[dict]) -> JsxElement {
         </div>
         <span className="text-muted-foreground">Monitoring</span>
         <div className="flex items-center gap-0.5">
-            {for index in range(8) {
+            {[
                 <span key={str(index)} className={"inline-block w-1 h-3 rounded-sm " + ("bg-emerald-500" if index < up else "bg-muted")}></span>
-            }}
+                for index in range(8)
+            ]}
         </div>
         <span className="text-muted-foreground font-mono truncate">{state["line"]}</span>
     </div>;

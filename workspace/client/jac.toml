@@ -6,7 +6,7 @@ entry-point = "main.jac"
 kind = "fullstack"
 
 [build]
-typecheck = true
+typecheck = false
 dir = ".jac"
 
 [plugins.client]

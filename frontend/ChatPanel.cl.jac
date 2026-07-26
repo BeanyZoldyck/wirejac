@@ -27,18 +27,17 @@ def:pub ChatPanel(prompt: str, events: list[dict], status: str) -> JsxElement {
             <div className="flex justify-end">
                 <div className="max-w-[85%] rounded-2xl bg-primary text-primary-foreground px-3 py-2 text-sm">{prompt}</div>
             </div>
-            {for (index, message) in enumerate(messages) {
+            {[
                 <div key={str(index)} className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
                         <span>{message["node"]}</span><span>{message["state"]}</span>
                     </div>
                     <div className="max-w-[95%] text-sm text-foreground leading-relaxed">{message["text"]}</div>
-                    {if len(message["tools"]) > 0 {
-                        <ToolCallsSection toolCalls={message["tools"]} />
-                    }}
+                    {<ToolCallsSection toolCalls={message["tools"]} /> if len(message["tools"]) > 0 else <></>}
                 </div>
-            }}
-            {if streaming { <Thinking /> }}
+                for (index, message) in enumerate(messages)
+            ]}
+            {<Thinking /> if streaming else <></>}
         </div>
         <div className="p-3 border-t border-border shrink-0">
             <PromptInputBox placeholder="Follow-up support coming next" onSend={handle_followup} />

@@ -6,7 +6,6 @@ sv import from .endpoints {
     get_request_history,
     get_graph_snapshot
 }
-import from react { useEffect }
 import from "../../../components/ui/ai-prompt-box" { PromptInputBox }
 import from .Sidebar { Sidebar }
 import from .GraphCanvas { GraphCanvas }
@@ -14,39 +13,20 @@ import from .ChatPanel { ChatPanel }
 import from .MonitoringBar { MonitoringBar }
 import from .TopBar { TopBar }
 
-def:pub Dashboard(prompt: str, title: str) -> JsxElement {
-    has clock: int = 0;
-    has clockRef: Ref[int] = Ref(0);
-    has idRef: Ref[int] = Ref(0);
+def:pub Dashboard(project: dict) -> JsxElement {
     has simpleView: bool = False;
+    events: list[dict] = list(project.get("events", []));
+    status = str(project.get("status", "running"));
 
     def set_simple(v: bool) {
         simpleView = v;
     }
 
-    async def refresh() {
-        if request_id and not request_id.startswith("pending-") {
-            events = await get_request_events(request_id);
-            for event in events {
-                if event.get("state") == "failed" { status = "failed"; }
-                if event.get("node") == "monitoring" and event.get("state") == "succeeded" {
-                    status = "done";
-                }
-            }
-        }
-    }
-
-    useEffect(lambda {
-        refresh();
-        interval = setInterval(lambda { refresh(); }, 1000);
-        return lambda { clearInterval(interval); };
-    }, [request_id]);
-
     return <div className="h-full w-full flex flex-col bg-background text-foreground">
         <TopBar events={events} title={str(project.get("name", "Wirejac build"))} status={status} />
         <div className="flex-1 flex min-h-0">
             <div className="w-[70%] h-full">
-                <GraphCanvas clock={clock} simple={simpleView} onSetSimple={set_simple} />
+                <GraphCanvas events={events} simple={simpleView} onSetSimple={set_simple} />
             </div>
             <div className="w-[30%] h-full min-w-0">
                 <ChatPanel prompt={str(project.get("prompt", ""))} events={events} status={status} />
@@ -71,7 +51,7 @@ def:pub app -> JsxElement {
     def select_project(pid: str) { activeId = pid; }
 
     async def create_from_prompt(message: str, files: any) {
-        pending_id = "pending-" + str(Date.now());
+        pending_id = "pending-" + str(len(projects) + 1);
         pending = {
             "id": pending_id,
             "name": message,
@@ -105,25 +85,26 @@ def:pub app -> JsxElement {
         }
     }
 
+    content = <div className="h-full w-full flex flex-col items-center justify-center gap-8 p-6">
+        <div className="flex flex-col items-center gap-2 text-center">
+            <h1 className="text-4xl font-semibold tracking-tight">wirejac</h1>
+            <p className="text-muted-foreground max-w-md">
+                Describe what you want built. The real Jac graph plans,
+                edits, validates, deploys, and records every activation.
+            </p>
+        </div>
+        <div className="w-full max-w-2xl">
+            <PromptInputBox placeholder="build me ___ that does ___" onSend={create_from_prompt} />
+        </div>
+    </div>;
+    if found {
+        content = <Dashboard key={str(active["id"])} project={active} />;
+    }
+
     return <div className="h-screen w-screen flex bg-background text-foreground overflow-hidden">
         <Sidebar projects={projects} activeId={activeId} onNew={new_build} onSelect={select_project} />
         <div className="flex-1 min-w-0 h-full">
-            {if found {
-                <Dashboard key={str(active["id"])} project={active} />
-            } else {
-                <div className="h-full w-full flex flex-col items-center justify-center gap-8 p-6">
-                    <div className="flex flex-col items-center gap-2 text-center">
-                        <h1 className="text-4xl font-semibold tracking-tight">wirejac</h1>
-                        <p className="text-muted-foreground max-w-md">
-                            Describe what you want built. The real Jac graph plans,
-                            edits, validates, deploys, and records every activation.
-                        </p>
-                    </div>
-                    <div className="w-full max-w-2xl">
-                        <PromptInputBox placeholder="build me ___ that does ___" onSend={create_from_prompt} />
-                    </div>
-                </div>
-            }}
+            {content}
         </div>
     </div>;
 }

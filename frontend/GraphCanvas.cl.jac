@@ -25,7 +25,7 @@ glob NODE_POSITIONS: dict[str, dict[str, int]] = {
     "monitoring": {"x": 360, "y": 960}
 };
 
-def:pub GraphCanvas(clock: int, simple: bool, onSetSimple: Callable[[bool], None]) -> JsxElement {
+def:pub GraphCanvas(events: list[dict], simple: bool, onSetSimple: Callable[[bool], None]) -> JsxElement {
     nodes: list[dict[str, any]] = [];
     for n in RUN_NODES {
         pos = NODE_POSITIONS[n["id"]];
@@ -37,9 +37,8 @@ def:pub GraphCanvas(clock: int, simple: bool, onSetSimple: Callable[[bool], None
                 "label": n["label"],
                 "kind": n["kind"],
                 "subdir": n["subdir"],
-                "status": node_status(n["id"], clock),
-                "revealed": node_revealed(n["id"], clock),
-                "simple": simple
+                "status": node_status(n["id"], events),
+                "simple": simple,
                 "revealed": node_revealed(n["id"], events)
             }
         });
