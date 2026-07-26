@@ -22,9 +22,11 @@ import from orchestrator.aws.fulfill {
 }
 
 ::py::
+import asyncio
 import datetime
 import fnmatch
 import hashlib
+import io
 import json
 import os
 import pathlib
@@ -42,6 +44,23 @@ _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
 _MAX_TOOL_TURNS = 10
 _MAX_OUTPUT = 12000
+_JAC_MCP_WORKSPACES = {"client", "device"}
+_JAC_MCP_TOOLS = {
+    "validate_jac",
+    "check_syntax",
+    "format_jac",
+    "py_to_jac",
+    "explain_error",
+    "list_examples",
+    "get_example",
+    "search_docs",
+    "get_ast",
+    "lint_jac",
+    "jac_to_py",
+    "jac_to_js",
+    "understand_jac_and_jaseci",
+    "get_resource",
+}
 
 
 def _utc_now():
@@ -188,6 +207,35 @@ def _tool_schemas():
             },
         },
     ]
+
+
+def _jac_mcp_enabled(name):
+    return name in _JAC_MCP_WORKSPACES
+
+
+def _jac_mcp_tool_schemas(tools):
+    schemas = []
+    for tool in tools:
+        if tool.name not in _JAC_MCP_TOOLS:
+            continue
+        data = tool.model_dump(by_alias=True, exclude_none=True)
+        schemas.append({
+            "type": "function",
+            "function": {
+                "name": data["name"],
+                "description": data.get("description", "Jac MCP tool"),
+                "parameters": data.get("inputSchema", {"type": "object"}),
+            },
+        })
+    return schemas
+
+
+def _jac_mcp_result(result):
+    data = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+    encoded = json.dumps(data)
+    if len(encoded) <= _MAX_OUTPUT:
+        return data
+    return {"truncated": True, "content": encoded[:_MAX_OUTPUT]}
 
 
 def _execute_tool(workspace, allowed_commands, name, arguments):
@@ -390,33 +438,18 @@ def _plan_change(prompt, workspaces):
     return _extract_json(message.get("content"))
 
 
-def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, acceptance, allowed_commands):
-    snapshot = _snapshot_workspace(request_id, name, workspace)
-    root, _ = _safe_path(workspace, ".")
-    spec_file = root / pathlib.Path(spec_path).name
-    before_spec = _read_text(spec_file) if spec_file.exists() else ""
-    if os.environ.get("WIREJAC_MOCK") == "1":
-        valid, checks = _validate_workspace(name, workspace, allowed_commands)
-        return {
-            "success": valid,
-            "summary": f"Mocked and validated {name} change: {task}" if valid else "Mock validation failed",
-            "tool_count": 0,
-            "revision": snapshot,
-            "contract_changed": False,
-            "error": "" if valid else json.dumps(checks),
-        }
-    skill_file = root / pathlib.Path(skill_path).name
-    skill = _read_text(skill_file) if skill_file.exists() else ""
-    spec = before_spec
-    system = f"""You are the {name} workspace agent. You may act only through the provided tools, which are confined to {workspace}. Follow these role instructions:\n\n{skill}\n\nAPI contract:\n\n{spec}\n\nComplete the task, inspect files before editing, and run appropriate validation. When done, return JSON only with success (boolean), summary (string), and error (string). Never claim success if validation failed."""
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": json.dumps({"task": task, "acceptance": acceptance})},
-    ]
+async def _workspace_agent_loop(
+    name,
+    workspace,
+    allowed_commands,
+    messages,
+    tools,
+    mcp_session,
+):
     tool_count = 0
     final = None
     for _ in range(_MAX_TOOL_TURNS):
-        message = _openrouter(messages, _tool_schemas())
+        message = _openrouter(messages, tools)
         messages.append(message)
         calls = message.get("tool_calls") or []
         if not calls:
@@ -440,7 +473,16 @@ def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, a
             function = call["function"]
             try:
                 arguments = json.loads(function.get("arguments") or "{}")
-                result = _execute_tool(workspace, allowed_commands, function["name"], arguments)
+                if mcp_session is not None and function["name"] in _JAC_MCP_TOOLS:
+                    mcp_result = await mcp_session.call_tool(function["name"], arguments)
+                    result = _jac_mcp_result(mcp_result)
+                else:
+                    result = _execute_tool(
+                        workspace,
+                        allowed_commands,
+                        function["name"],
+                        arguments,
+                    )
             except Exception as exc:
                 result = {"error": str(exc)}
             messages.append({
@@ -448,6 +490,79 @@ def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, a
                 "tool_call_id": call["id"],
                 "content": json.dumps(result),
             })
+    return final, tool_count
+
+
+async def _workspace_agent_live(name, workspace, allowed_commands, messages):
+    tools = _tool_schemas()
+    if not _jac_mcp_enabled(name):
+        return await _workspace_agent_loop(
+            name, workspace, allowed_commands, messages, tools, None
+        )
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    root, _ = _safe_path(workspace, ".")
+    server = StdioServerParameters(
+        command="jac",
+        args=["mcp", "--mode", "lite"],
+        cwd=root,
+        env={"PATH": os.environ.get("PATH", "")},
+    )
+    errlog = io.StringIO()
+    async with stdio_client(server, errlog=errlog) as (reader, writer):
+        async with ClientSession(reader, writer) as session:
+            await asyncio.wait_for(session.initialize(), timeout=15)
+            inventory = await asyncio.wait_for(session.list_tools(), timeout=15)
+            tools.extend(_jac_mcp_tool_schemas(inventory.tools))
+            return await _workspace_agent_loop(
+                name, workspace, allowed_commands, messages, tools, session
+            )
+
+
+def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, acceptance, allowed_commands):
+    snapshot = _snapshot_workspace(request_id, name, workspace)
+    root, _ = _safe_path(workspace, ".")
+    spec_file = root / pathlib.Path(spec_path).name
+    before_spec = _read_text(spec_file) if spec_file.exists() else ""
+    if os.environ.get("WIREJAC_MOCK") == "1":
+        valid, checks = _validate_workspace(name, workspace, allowed_commands)
+        return {
+            "success": valid,
+            "summary": f"Mocked and validated {name} change: {task}" if valid else "Mock validation failed",
+            "tool_count": 0,
+            "revision": snapshot,
+            "contract_changed": False,
+            "error": "" if valid else json.dumps(checks),
+        }
+    skill_file = root / pathlib.Path(skill_path).name
+    skill = _read_text(skill_file) if skill_file.exists() else ""
+    spec = before_spec
+    mcp_instruction = (
+        " Use the Jac MCP tools for current Jac documentation, formatting, "
+        "linting, and compiler feedback."
+        if _jac_mcp_enabled(name)
+        else ""
+    )
+    system = f"""You are the {name} workspace agent. You may act only through the provided tools, which are confined to {workspace}. Follow these role instructions:\n\n{skill}\n\nAPI contract:\n\n{spec}\n\nComplete the task, inspect files before editing, and run appropriate validation.{mcp_instruction} When done, return JSON only with success (boolean), summary (string), and error (string). Never claim success if validation failed."""
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps({"task": task, "acceptance": acceptance})},
+    ]
+    try:
+        final, tool_count = asyncio.run(
+            _workspace_agent_live(name, workspace, allowed_commands, messages)
+        )
+    except Exception as exc:
+        return {
+            "success": False,
+            "summary": f"{name} workspace tooling failed",
+            "tool_count": 0,
+            "revision": snapshot,
+            "contract_changed": False,
+            "error": str(exc),
+        }
     if final is None:
         return {
             "success": False,
@@ -522,6 +637,16 @@ def new_request_id() -> str {
 
 def now() -> str {
     return cast(str, _utc_now());
+}
+
+
+def workspace_has_jac_mcp(name: str) -> bool {
+    return cast(bool, _jac_mcp_enabled(name));
+}
+
+
+def jac_mcp_allows_tool(name: str) -> bool {
+    return cast(bool, name in _JAC_MCP_TOOLS);
 }
 
 

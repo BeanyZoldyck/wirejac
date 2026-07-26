@@ -148,6 +148,7 @@ Do not silently place gyro values into acceleration fields.
 ## Pipeline Boundary
 
 - Author restricted Jac source under `src/`.
+- Use the Jac MCP tools for current syntax, formatting, linting, and compiler feedback.
 - Run `jac check src/main.jac` before reporting success.
 - Treat `generated/main.py` as the external Jac-to-Python output location.
 - Run the MicroPython compatibility checks defined by the project.

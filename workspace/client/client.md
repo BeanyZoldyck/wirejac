@@ -14,6 +14,7 @@ and DynamoDB integration tests pass.
 ## Responsibilities
 
 - Implement the client in Jac client syntax.
+- Use the Jac MCP tools for current syntax, formatting, linting, and compiler feedback.
 - List uploaded MPU6050 capture sessions.
 - Query all readings for a selected `session_id`.
 - Render acceleration `x/y/z` against capture time.

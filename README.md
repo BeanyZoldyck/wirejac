@@ -5,6 +5,7 @@ This repository contains a runnable Jac-native autonomous agent graph for an emb
 ## Requirements
 
 - A current Jac installation.
+- The Jac MCP plugin (`jac install jac-mcp`).
 - Node and npm for the demo client validation.
 - An OpenRouter key for live agents.
 - Optional: AWS CLI profile `wirejac` only for deploying infrastructure (not for using the samples API).
@@ -61,6 +62,11 @@ jac run main.jac --no-cache
 ```
 
 The Coordinator calls OpenRouter to produce an impact plan. Selected workspace nodes then call OpenRouter with contained file and command tools. Workspace tools cannot resolve paths outside their assigned directory.
+
+Client and Device agent sessions also connect to `jac mcp --mode lite` over
+stdio. They receive a constrained set of Jac documentation, formatting,
+linting, validation, and transpilation tools; MCP command execution and code
+execution tools are not exposed.
 
 ## Run Without OpenRouter
 
