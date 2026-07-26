@@ -2,25 +2,36 @@ import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib/core';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
+
+export interface MetaAppHostingProps {
+  /** Cloud samples API base URL (Lambda Function URL). */
+  readonly samplesApiUrl?: string;
+  /** Shared team API key secret (resolved at deploy by WriteConfig Lambda). */
+  readonly samplesApiKeySecret?: secretsmanager.ISecret;
+}
 
 /**
  * Static hosting for the Meta app (accelerometer product UI in workspace/client).
  *
- * The browser never talks to DynamoDB. It calls the Jac sample API
- * (GET /api/samples); that server reads DynamoDB. Cross-origin calls from
- * this CloudFront URL work with single-process `jac start`, which allows
- * all origins.
+ * The browser never talks to DynamoDB. It calls the cloud samples API
+ * (GET /api/samples) with X-Api-Key. config.js is written by a small Lambda
+ * that reads Secrets Manager — BucketDeployment cannot resolve secrets into
+ * file bodies.
  */
 export class MetaAppHosting extends Construct {
   public readonly bucket: s3.Bucket;
   public readonly distribution: cloudfront.Distribution;
   public readonly url: string;
 
-  constructor(scope: Construct, id: string) {
+  constructor(scope: Construct, id: string, props: MetaAppHostingProps = {}) {
     super(scope, id);
 
     this.bucket = new s3.Bucket(this, 'Bucket', {
@@ -56,7 +67,7 @@ export class MetaAppHosting extends Construct {
     this.url = `https://${this.distribution.distributionDomainName}`;
 
     const clientDir = path.join(__dirname, '..', '..', 'workspace', 'client');
-    new s3deploy.BucketDeployment(this, 'DeployClient', {
+    const staticDeploy = new s3deploy.BucketDeployment(this, 'DeployClient', {
       sources: [
         s3deploy.Source.asset(clientDir, {
           exclude: [
@@ -65,6 +76,8 @@ export class MetaAppHosting extends Construct {
             'package-lock.json',
             'node_modules',
             'node_modules/**',
+            'config.js',
+            'config.example.js',
             '**/.DS_Store',
           ],
         }),
@@ -73,6 +86,51 @@ export class MetaAppHosting extends Construct {
       distribution: this.distribution,
       distributionPaths: ['/*'],
     });
+
+    if (props.samplesApiUrl && props.samplesApiKeySecret) {
+      const writer = new lambda.Function(this, 'ConfigWriter', {
+        functionName: 'wirejac-write-meta-config',
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: 'handler.handler',
+        code: lambda.Code.fromAsset(
+          path.join(__dirname, '..', 'lambda', 'write-config'),
+        ),
+        timeout: cdk.Duration.seconds(30),
+      });
+      props.samplesApiKeySecret.grantRead(writer);
+      this.bucket.grantPut(writer, 'config.js');
+      writer.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['cloudfront:CreateInvalidation'],
+          resources: [
+            cdk.Stack.of(this).formatArn({
+              service: 'cloudfront',
+              region: '',
+              account: cdk.Stack.of(this).account,
+              resource: 'distribution',
+              resourceName: this.distribution.distributionId,
+            }),
+          ],
+        }),
+      );
+
+      const provider = new cr.Provider(this, 'ConfigWriterProvider', {
+        onEventHandler: writer,
+      });
+
+      const writeConfig = new cdk.CustomResource(this, 'WriteConfigJs', {
+        serviceToken: provider.serviceToken,
+        properties: {
+          Bucket: this.bucket.bucketName,
+          ApiUrl: props.samplesApiUrl,
+          SecretArn: props.samplesApiKeySecret.secretArn,
+          DistributionId: this.distribution.distributionId,
+          // Force rewrite when this construct changes.
+          Version: '2',
+        },
+      });
+      writeConfig.node.addDependency(staticDeploy);
+    }
 
     new ssm.StringParameter(this, 'MetaAppUrlParam', {
       parameterName: '/wirejac/dev/meta-app-url',

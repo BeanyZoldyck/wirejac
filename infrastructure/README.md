@@ -16,15 +16,41 @@ The stack currently contains:
 - SSM deployment marker `/wirejac/dev/stack-status`
 - DynamoDB `wirejac-samples` (`SamplesTable`) for accelerometer history
 - SSM parameter `/wirejac/dev/samples-table-name` exporting the table name
+- Lambda Function URL samples API (`SamplesApi`) with IAM → DynamoDB
+- Secrets Manager `wirejac/dev/samples-api-key` (shared team API key)
+- SSM `/wirejac/dev/samples-api-url` exporting the Function URL
 - S3 + CloudFront Meta app hosting (`MetaAppHosting`) for `workspace/client`
 - SSM parameter `/wirejac/dev/meta-app-url` exporting the CloudFront URL
 
-After deploy, point the server at the table:
+## Portable cloud API (Option A)
+
+Anyone at the hackathon can call the samples API without AWS credentials on
+their laptop:
+
+1. Deploy once (someone with the `wirejac` profile).
+2. Share the Function URL + API key (or open the Meta app — `config.js` is
+   injected automatically).
+3. Callers send `X-Api-Key`. The Lambda role owns DynamoDB access.
 
 ```sh
-export WIREJAC_SAMPLES_TABLE=wirejac-samples
-export WIREJAC_AWS_REGION=us-west-2
-export WIREJAC_AWS_PROFILE=wirejac
+# After deploy
+SAMPLES_API_URL=$(aws ssm get-parameter --name /wirejac/dev/samples-api-url \
+  --profile wirejac --query Parameter.Value --output text)
+WIREJAC_API_KEY=$(aws secretsmanager get-secret-value \
+  --secret-id wirejac/dev/samples-api-key --profile wirejac \
+  --query SecretString --output text)
+
+curl "$SAMPLES_API_URL/api/health"
+curl -H "X-Api-Key: $WIREJAC_API_KEY" \
+  "$SAMPLES_API_URL/api/samples?session_id=training-001"
+```
+
+Local Jac parity (optional):
+
+```sh
+export WIREJAC_API_KEY=...          # same shared key, or any local value
+# omit WIREJAC_SAMPLES_TABLE for in-memory; or set it + profile for local Dynamo
+jac start workspace/server/main.jac --no-client
 ```
 
 ## Meta app (product UI)
@@ -35,19 +61,13 @@ via CloudFront on each `cdk deploy`. Stack outputs:
 - `MetaAppUrl` — open this in a browser
 - `MetaAppBucketName` — bucket holding the static assets
 
-The Meta app does **not** call DynamoDB from the browser. It should call the
-Jac sample API (`GET /api/samples`). That API reads DynamoDB when
-`WIREJAC_SAMPLES_TABLE` is set.
+Deploy writes `config.js` with `apiBaseUrl` + `apiKey` so the Meta app talks
+to `SamplesApi` without committing secrets to git.
 
-CORS: single-process `jac start` allows all origins (`*`), so a CloudFront
-page can call a Jac API on another host without extra CORS config. Point the
-client at your API base URL (for example `http://localhost:8000` while the
-server runs locally).
+## AWS login (deployers only)
 
-## Authentication
-
-Authenticate through AWS's browser login. Do not place passwords, access keys,
-or session tokens in this repository.
+Only machines that run `cdk deploy` need AWS browser login. Do not place
+passwords, access keys, or session tokens in this repository.
 
 ```sh
 aws login --profile wirejac

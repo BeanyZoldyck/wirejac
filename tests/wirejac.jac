@@ -1,7 +1,11 @@
 """Tests for the Jac-native WireJac agent graph."""
 
 import os;
-import from orchestrator.adapters { deploy }
+import from orchestrator.adapters {
+    deploy,
+    jac_mcp_allows_tool,
+    workspace_has_jac_mcp
+}
 import from orchestrator.graph {
     ChangeRequest,
     GraphSnapshot,
@@ -31,6 +35,19 @@ test "impact plans require complete routing decisions" {
         tasks={"client": "Improve the chart"}
     );
     assert validate_plan(invalid, workspaces) == "Missing skip reason for workspace: device";
+}
+
+
+test "jac mcp is scoped to client and device agents" {
+    assert workspace_has_jac_mcp("client");
+    assert workspace_has_jac_mcp("device");
+    assert not workspace_has_jac_mcp("server");
+    assert not workspace_has_jac_mcp("coordinator");
+    assert jac_mcp_allows_tool("validate_jac");
+    assert jac_mcp_allows_tool("get_resource");
+    assert not jac_mcp_allows_tool("run_jac");
+    assert not jac_mcp_allows_tool("graph_visualize");
+    assert not jac_mcp_allows_tool("execute_command");
 }
 
 

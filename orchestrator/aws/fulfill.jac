@@ -14,6 +14,7 @@ import from orchestrator.aws.contracts { InfraKind, InfraRequest }
 """Resources the infrastructure worker has already defined in CDK."""
 glob FULFILLED_RESOURCES: dict[str, InfraKind] = {
     "SamplesTable": InfraKind.DATA,
+    "SamplesApi": InfraKind.RUNTIME,
     "MetaAppHosting": InfraKind.HOSTING
 };
 
@@ -34,6 +35,20 @@ def server_infra_needs(request_id: str) -> list[InfraRequest] {
                 "ssm_param": "/wirejac/dev/samples-table-name"
             },
             fulfilled="SamplesTable" in FULFILLED_RESOURCES
+        ),
+        InfraRequest(
+            request_id=request_id,
+            requested_by="server",
+            kind=InfraKind.RUNTIME,
+            resource_name="SamplesApi",
+            rationale="Cloud HTTPS samples API with IAM DynamoDB access and shared API key",
+            spec={
+                "runtime": "lambda_function_url",
+                "auth": "shared_api_key",
+                "ssm_url": "/wirejac/dev/samples-api-url",
+                "secret": "wirejac/dev/samples-api-key"
+            },
+            fulfilled="SamplesApi" in FULFILLED_RESOURCES
         )
     ];
 }

@@ -2,6 +2,10 @@
 
 Uses DynamoDB when WIREJAC_SAMPLES_TABLE is set; otherwise an in-process store
 so mock and local runs need no AWS.
+
+When WIREJAC_API_KEY is set, POST/GET /api/samples require a matching api_key
+(query/body). Health stays open for probes. Cloud deploy uses the Lambda
+runtime under infrastructure/lambda/samples-api (same contract + X-Api-Key).
 """
 
 import os;
@@ -131,7 +135,22 @@ def _list_samples(session_id):
     if _store_mode() == "dynamodb":
         return _list_dynamo(session_id)
     return _list_memory(session_id)
+
+
+def _api_key_ok(provided):
+    expected = os.environ.get("WIREJAC_API_KEY", "")
+    if not expected:
+        return True
+    return bool(provided) and provided == expected
 ::py::
+
+
+"""True when the caller may hit sample endpoints (shared team API key)."""
+def require_api_key(api_key: str = "") {
+    if not _api_key_ok(api_key) {
+        raise PermissionError("invalid or missing API key");
+    }
+}
 
 
 """In-process / DynamoDB write used by the public ingest endpoint."""
@@ -175,8 +194,10 @@ def:pub post_sample(
     y: float,
     z: float,
     session_id: str = "",
-    label: str | None = None
+    label: str | None = None,
+    api_key: str = ""
 ) -> AcceptResult {
+    require_api_key(api_key);
     if not device_id {
         raise ValueError("device_id is required");
     }
@@ -191,7 +212,8 @@ def:pub post_sample(
 
 
 @restspec(method=HTTPMethod.GET, path="/api/samples")
-def:pub get_samples(session_id: str) -> SampleList {
+def:pub get_samples(session_id: str, api_key: str = "") -> SampleList {
+    require_api_key(api_key);
     if not session_id {
         raise ValueError("session_id is required");
     }

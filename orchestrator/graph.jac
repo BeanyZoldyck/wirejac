@@ -483,7 +483,7 @@ def ensure_graph() -> Coordinator {
         path="workspace/client",
         skill_path="workspace/client/client.md",
         spec_path="workspace/client/api-spec.md",
-        allowed_commands=["npm", "pnpm", "npx"]
+        allowed_commands=["jac", "npm", "pnpm", "npx"]
     );
     server = Server(
         name="server",

@@ -7,6 +7,17 @@
 /* --- Default UI font: M PLUS 1 (variable) — everywhere by default ---------- */
 @import "@fontsource-variable/m-plus-1";
 
+/* --- Dark mode (default) -------------------------------------------------- *
+ * The app runs in dark mode. The `.dark` class is added to <html> at mount
+ * (see frontend.cl.jac); this sets the page background + color-scheme up front
+ * so there's no white flash before React mounts.                             */
+:root {
+    color-scheme: dark;
+}
+html {
+    background-color: oklch(0.141 0.005 285.823);
+}
+
 :root {
     --font-sans: "M PLUS 1 Variable", "M PLUS 1", ui-sans-serif, system-ui, sans-serif;
 }

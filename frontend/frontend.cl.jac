@@ -53,6 +53,11 @@ def:pub app -> JsxElement {
     has projects: list[dict] = [];
     has activeId: str = "";
 
+    # Dark mode: flip the whole shadcn palette by adding `.dark` to <html>.
+    can with entry {
+        document.documentElement.classList.add("dark");
+    }
+
     def new_build() {
         activeId = "";
     }
