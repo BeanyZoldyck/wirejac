@@ -6,9 +6,17 @@ infrastructure worker's registry: known resources that already exist in
 AWS pipeline before the server can use durable storage.
 """
 
-import os;
-
 import from orchestrator.aws.contracts { InfraKind, InfraRequest }
+import from typing { cast }
+
+::py::
+import os
+
+
+def _samples_table_configured():
+    return bool(os.environ.get("WIREJAC_SAMPLES_TABLE", ""))
+
+::py::
 
 
 """Resources the infrastructure worker has already defined in CDK."""
@@ -68,7 +76,7 @@ def infra_catalog_ready(requests: list[InfraRequest]) -> bool {
 
 """True when the running server process is wired to the DynamoDB table."""
 def samples_table_configured -> bool {
-    return bool(os.environ.get("WIREJAC_SAMPLES_TABLE", ""));
+    return cast(bool, _samples_table_configured());
 }
 
 
@@ -96,10 +104,6 @@ def intent_for_server_infra(requests: list[InfraRequest]) -> str {
     pending = [r for r in resolve_against_catalog(requests) if not r.fulfilled];
     if pending {
         return "provision_infra";
-    }
-    # Mock/local runs use the in-memory store; don't force an AWS gate.
-    if os.environ.get("WIREJAC_MOCK", "") == "1" {
-        return "restart_server";
     }
     if not samples_table_configured() {
         # Constructs exist in CDK but are not deployed / not exported into env.

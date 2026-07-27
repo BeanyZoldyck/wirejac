@@ -7,11 +7,35 @@ This repository contains a runnable Jac-native autonomous agent graph for an emb
 - A current Jac installation.
 - The Jac MCP plugin (`jac install jac-mcp`).
 - Node and npm for the demo client validation.
-- An OpenRouter key for live agents.
+- An OpenRouter key for the coordinator and workspace agents.
 - Optional: AWS CLI profile `wirejac` only for deploying infrastructure (not for using the samples API).
 
 The configured default model is `deepseek/deepseek-v4-flash`. Override it with `OPENROUTER_MODEL` if necessary.
 
+## Start the WireJac App
+
+From the repository root:
+
+```bash
+./scripts/start-app.sh
+```
+
+The launcher installs the frontend dependencies, links this repository's Jac
+modules into the frontend project, and starts the full-stack Jac app. Set
+`OPENROUTER_API_KEY` before submitting a build. Open <http://localhost:8000/>. The Jac RPC API runs at
+<http://localhost:8001/> while the development client is active.
+
+Use this prompt for the complete six-node phone-snatch demo:
+
+```text
+Create a phone snatch data collection system with a dashboard, an event API,
+and an ESP32 GY-521 recording button.
+```
+
+The normal prompt runs hardware in safe `plan` mode and generates firmware plus
+14 progressive assembly SVGs without opening a serial device. An explicit
+`flash` or `deploy` prompt instead stops at the physical assembly gate and
+renders the full 18-step circuit before any device operation can continue.
 ## Cloud samples API (portable)
 
 Hackathon default: DynamoDB in AWS, HTTPS API in Lambda, shared team API key.
@@ -53,7 +77,7 @@ The product UI (`workspace/client`) is hosted on private S3 behind CloudFront.
 prints `MetaAppUrl` (SSM `/wirejac/dev/meta-app-url`). The browser calls the
 cloud samples API — never DynamoDB.
 
-## Run With Live Agents
+## Run Agents
 
 ```bash
 export OPENROUTER_API_KEY="..."
@@ -68,31 +92,14 @@ stdio. They receive a constrained set of Jac documentation, formatting,
 linting, validation, and transpilation tools; MCP command execution and code
 execution tools are not exposed.
 
-## Run Without OpenRouter
-
-Mock mode exercises the complete graph and deterministic validators without model calls or source edits:
-
-```bash
-WIREJAC_MOCK=1 \
-WIREJAC_PROMPT="Make the active sample count more prominent" \
-jac run main.jac --no-cache
-```
-
-Expected route:
-
-```text
-Coordinator -> Client -> Deployment -> Monitoring
-```
-
-Server and Device are recorded as skipped.
-
 ## Run Tests
 
 ```bash
 jac test tests/wirejac.jac
 ```
 
-The tests use mock mode and cover impact-plan validation, the client-only traversal, the six-node graph snapshot, deterministic workspace validation, and the ESP32 deployment placeholder.
+The tests cover impact-plan validation, graph topology, hardware compilation,
+and the guarded ESP32 hardware lifecycle.
 
 ## Public Walkers
 
@@ -100,8 +107,12 @@ The tests use mock mode and cover impact-plan validation, the client-only traver
 
 - `SubmitChange`: accepts only a `prompt`, creates an internal `ChangeRequest`, and runs it through the agent graph.
 - `GraphSnapshot`: reports the six graph nodes and eight workflow edges for a future dashboard.
+- `HardwareJobStatus`: returns ordered hardware lifecycle events, open gates, and artifact count for a graph-owned hardware job.
+- `ResolveHardwareGate`: records an explicit assembly or device-gate decision. Pass the original `prompt` and `request_id` to resume the graph automatically when the accepted job reaches success.
 
-Run `jac start main.jac --no_client` to expose public walkers through Jac's API-only server runtime. The external dashboard integration still needs to connect these endpoints and the activation stream.
+Run `jac start main.jac --no-client` to expose the public walkers
+through Jac's API-only server runtime. The full-stack app already consumes the
+same graph, activation history, hardware artifacts, and gate endpoints.
 
 ```bash
 curl -X POST http://localhost:8000/walker/SubmitChange \
@@ -111,6 +122,10 @@ curl -X POST http://localhost:8000/walker/SubmitChange \
 curl -X POST http://localhost:8000/walker/GraphSnapshot \
   -H 'Content-Type: application/json' \
   -d '{}'
+
+curl -X POST http://localhost:8000/walker/HardwareJobStatus \
+  -H 'Content-Type: application/json' \
+  -d '{"job_id":"<hardware-job-id>","after_sequence":0}'
 ```
 
 ## Generated Runtime Data
@@ -133,24 +148,35 @@ Each workspace includes a role file and its local `api-spec.md`. If an agent cha
 
 ## External Placeholders
 
-### Dashboard
+### Event Transport and Monitoring
 
-`_emit_event` in `orchestrator/adapters.jac` currently appends JSONL events. Replace or extend it with SSE/WebSocket publication. `GraphSnapshot` already supplies static topology data.
+The Jac UI polls the durable JSONL activation sink written by `_emit_event` in
+`orchestrator/adapters.jac`; SSE or WebSocket delivery remains a production
+transport upgrade. `GraphSnapshot` supplies the topology rendered by the UI.
 
-Monitoring currently accepts configured checks without launching a browser. Replace `_monitor` with browser, process-log, HTTP, and serial adapters when the external dashboard is available.
+Monitoring currently accepts configured checks without launching a browser.
+Replace `_monitor` with browser, process-log, HTTP, and serial adapters for
+production runtime evidence.
 
 ### ESP32
 
-Device changes stop in Deployment with `AWAITING_APPROVAL`. `_deploy` reports the expected artifact as `workspace/device/generated/main.py` but does not invoke Jac-to-Python, MicroPython, serial, or flashing tools.
+When the planner selects `device`, the graph calls
+[`orchestrator/hardware_bridge.jac`](orchestrator/hardware_bridge.jac), not the
+legacy `_deploy` device placeholder. The bridge creates an idempotent hardware
+job and mirrors its lifecycle events, revision ID, job ID, and open gate IDs
+onto the `device` graph activations.
 
-The external device pipeline should:
+Ordinary device prompts use `plan` mode: the service generates the validated
+breadboard design, ordered assembly SVGs, Wokwi diagram, and constrained
+MicroPython firmware bundle without opening a serial device. Explicit flash or
+deploy prompts use guarded `deploy` mode and stop at the required hardware
+gate. Once hardware succeeds, graph Deployment excludes `device` from its
+generic deployment adapter, and Monitoring rechecks the hardware job before
+running the ordinary acceptance checks.
 
-1. Convert the restricted Jac source in `workspace/device/src` to Python.
-2. Reject output incompatible with the target MicroPython runtime.
-3. Place the prepared artifact in `workspace/device/generated/main.py`.
-4. Require artifact-specific approval before writing to a physical ESP32.
-
-See `jacgraph.md` for the complete architecture and safety model.
+The WireJac UI renders `assembly.json` and `step-NN.svg` artifacts before
+offering gate acceptance. It never infers a flash or assembly decision from
+graph progress alone.
 
 ## Hardware Agent
 

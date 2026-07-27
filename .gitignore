@@ -6,6 +6,9 @@ credentials
 credentials.json
 aws-credentials*
 jac.local.toml
+.env
+.env.*
+!.env.example
 
 # Jac build cache and artifacts
 orchestrator/.jac/cache

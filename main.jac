@@ -6,6 +6,8 @@ import hardware.integration as integration;
 import from orchestrator.graph {
     ChangeRequest,
     GraphSnapshot,
+    HardwareJobStatus,
+    ResolveHardwareGate,
     SubmitChange,
     ensure_graph
 }

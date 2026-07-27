@@ -66,8 +66,8 @@ html {
     to { transform: rotate(360deg); }
 }
 
-/* --- Node spawn-in (mock progressive reveal) ----------------------------- *
- * Plays once when a node is first revealed on the timeline.                  */
+/* --- Node spawn-in -------------------------------------------------------- *
+ * Plays once when a runtime node is first revealed.                          */
 @keyframes wj-node-in {
     from { opacity: 0; transform: translateY(-10px) scale(0.95); }
     to   { opacity: 1; transform: translateY(0) scale(1); }

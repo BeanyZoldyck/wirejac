@@ -26,8 +26,16 @@ with entry:__main__ {
     request = HardwareRequest(
         project_id=f"live-motion-{str(uuid4())}",
         prompt=(
-            "Phone-snatch motion test: use the GY-521 and a button to start "
-            "and stop recording, then emit motion data over serial."
+            "Repair the rejected phone-snatch motion design and deploy it to "
+            "the connected ESP32. The assembled circuit is fixed: GY-521 SDA "
+            "is GPIO21, GY-521 SCL is GPIO22, and the active-low recording "
+            "button is GPIO19 to GND using the internal pull-up. Preserve "
+            "those assignments and do not use ESP32 boot-strapping GPIOs. "
+            "The MicroPython application must emit sensor.detected after the "
+            "MPU6050 responds at 0x68, wirejac.ready after self-test, periodic "
+            "wirejac.heartbeat events, recording.started/recording.stopped on "
+            "button presses, and motion.sample readings over serial while "
+            "recording."
         ),
         allowed_inventory=[
             "doit-esp32-devkit-v1-30pin",
@@ -38,11 +46,7 @@ with entry:__main__ {
         execution_mode=ExecutionMode.DEPLOY,
         device_selector=stable_port,
         provision_policy=ProvisionPolicy.ALLOW_IF_NEEDED,
-        metadata={
-            "generation": "fixture",
-            "fixture": "phone_snatch_motion_test",
-            "expected_mac": expected_mac,
-        }
+        metadata={"expected_mac": expected_mac}
     );
     job = _create_job(request, f"live-motion-{str(uuid4())}");
     _execute_job(job);

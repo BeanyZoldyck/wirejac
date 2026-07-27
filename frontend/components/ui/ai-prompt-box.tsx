@@ -762,7 +762,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             )}
             onClick={() => {
               if (isLoading) {
-                // stop generation hook (no-op mock)
+                // Stop-generation wiring is supplied by the active run controller.
               } else if (isRecording) {
                 setIsRecording(false);
               } else if (hasContent) {

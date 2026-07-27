@@ -3,7 +3,15 @@
 Combines server-side endpoints with the client-side UI.
 """
 
-import from endpoints { ping }
+import from endpoints {
+    get_graph_snapshot,
+    get_hardware_job,
+    get_request_events,
+    get_request_history,
+    ping,
+    resolve_hardware_approval,
+    submit_build
+}
 
 # Client-side UI
 cl {

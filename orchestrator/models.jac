@@ -30,6 +30,8 @@ obj Activation {
         timestamp: str = "",
         tool_count: int = 0,
         revision: str = "",
+        hardware_job_id: str = "",
+        hardware_status: str = "",
         error: str = "";
 }
 
@@ -48,6 +50,9 @@ obj AgentResult {
         tool_count: int = 0,
         revision: str = "",
         contract_changed: bool = False,
+        hardware_job_id: str = "",
+        hardware_status: str = "",
+        hardware_gate_ids: list[str] = [],
         error: str = "";
 }
 

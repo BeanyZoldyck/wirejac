@@ -66,12 +66,7 @@ import from hardware.orchestration {
 import from hardware.planning {
     FirmwareApplication,
     HardwareIntent,
-    PlanningSource,
     author_micropython,
-    default_motion_test_application,
-    default_motion_test_intent,
-    default_phone_snatch_application,
-    default_phone_snatch_intent,
     hardware_intent_json,
     plan_hardware
 }
@@ -221,56 +216,12 @@ def _persist_bytes_artifact(
 }
 
 
-def _fixture_kind(context: PhaseContext) -> str {
-    requested = context.request.metadata.get("generation", "").lower();
-    if requested == "llm" {
-        return "";
-    }
-    fixture = context.request.metadata.get("fixture", "").lower();
-    if fixture in ["phone_snatch_motion_test", "motion_test", "motion-test"] {
-        return "motion_test";
-    }
-    if requested in ["motion_test", "motion-test"] {
-        return "motion_test";
-    }
-    if requested in ["fixture", "reviewed_fixture"] {
-        prompt = context.request.prompt.lower();
-        if (
-            "motion data" in prompt
-            and "button" in prompt
-            and "start" in prompt
-            and "stop" in prompt
-        ) {
-            return "motion_test";
-        }
-        return "phone_snatch";
-    }
-    prompt = context.request.prompt.lower();
-    if "snatch" in prompt and "phone" in prompt {
-        return "phone_snatch";
-    }
-    return "";
-}
-
-
-def _uses_reviewed_fixture(context: PhaseContext) -> bool {
-    return bool(_fixture_kind(context));
-}
-
-
 def _intent_for(context: PhaseContext) -> HardwareIntent {
     cached = _intents.get(context.revision_id);
     if cached is not None {
         return cached;
     }
-    fixture = _fixture_kind(context);
-    if fixture == "motion_test" {
-        intent = default_motion_test_intent(context.request);
-    } elif fixture == "phone_snatch" {
-        intent = default_phone_snatch_intent(context.request);
-    } else {
-        intent = plan_hardware(context.request);
-    }
+    intent = plan_hardware(context.request);
     _intents[context.revision_id] = intent;
     return intent;
 }
@@ -294,12 +245,6 @@ def _application_for(
     context: PhaseContext,
     intent: HardwareIntent
 ) -> FirmwareApplication {
-    if intent.source == PlanningSource.REVIEWED_FIXTURE {
-        if _fixture_kind(context) == "motion_test" {
-            return default_motion_test_application();
-        }
-        return default_phone_snatch_application();
-    }
     return author_micropython(context.request, intent);
 }
 
@@ -1388,14 +1333,13 @@ def _read_artifact(view: ArtifactView) -> bytes {
 
 
 def _register_hardware_service {
-    if _registered {
-        return;
+    if not _registered {
+        workspace = os.environ.get(
+            "WIREJAC_WORKSPACE_ROOT",
+            expanduser("~/.wirejac/runs")
+        );
+        _ = host_runtime.configure_runtime(workspace);
     }
-    workspace = os.environ.get(
-        "WIREJAC_WORKSPACE_ROOT",
-        expanduser("~/.wirejac/runs")
-    );
-    _ = host_runtime.configure_runtime(workspace);
     _register_phase_hook(JobStatus.PLANNING, _planning_phase);
     _register_phase_hook(JobStatus.VALIDATING, _validation_phase);
     _register_phase_hook(JobStatus.GENERATING, _generation_phase);

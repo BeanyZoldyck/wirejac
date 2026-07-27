@@ -664,7 +664,7 @@ An agent saying "done" is not success evidence.
 
 ## Validated Jac Architecture Skeleton
 
-The following skeleton has been checked with the Jac full validator. The adapter functions at the bottom are deliberately deterministic mocks. Production implementations replace their bodies with the bounded OpenRouter, workspace, deployment, monitoring, and event adapters described above.
+The following skeleton has been checked with the Jac full validator. It illustrates the graph contracts; the runnable implementation uses the bounded OpenRouter, workspace, deployment, monitoring, and event adapters described above.
 
 ```jac
 enum ActivationState {
@@ -931,7 +931,7 @@ walker ChangeRequest {
     }
 }
 
-# Mock adapters keep this architecture skeleton executable.
+# Illustrative adapters keep this architecture reference self-contained.
 def plan_change(prompt: str) -> ImpactPlan {
     return ImpactPlan(
         selected=["client"],
@@ -1104,7 +1104,7 @@ The document intentionally does not hard-code a DeepSeek model ID or demo comman
 
 ## Implementation Milestones
 
-### Milestone 1: Mocked Native Graph
+### Milestone 1: Native Graph
 
 - Split the validated skeleton into declaration and implementation modules.
 - Build the persistent six-node topology with find-or-create behavior.

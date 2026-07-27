@@ -14,12 +14,12 @@ def dot(status: str) -> str {
 }
 
 def:pub Sidebar(
-    projects: list,
+    projects: list[dict],
     activeId: str,
     onNew: Callable[[], None],
     onSelect: Callable[[str], None]
 ) -> JsxElement {
-    return <div className="w-60 shrink-0 h-full border-r border-border bg-background flex flex-col">
+    return <div className="hidden lg:flex w-60 shrink-0 h-full border-r border-border bg-background flex-col">
         <div className="px-4 py-4">
             <span className="text-base font-semibold tracking-tight">wirejac</span>
         </div>
@@ -39,13 +39,13 @@ def:pub Sidebar(
             {<p className="px-2 py-2 text-xs text-muted-foreground">No builds yet</p> if len(projects) == 0 else <></>}
             {[
                 <button
-                    key={p["id"]}
-                    onClick={lambda -> None { onSelect(p["id"]); }}
-                    className={"w-full flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-left transition-colors " + ("bg-accent" if p["id"] == activeId else "hover:bg-accent/50")}
+                    key={str(p["id"])}
+                    onClick={lambda -> None { onSelect(str(p["id"])); }}
+                    className={"w-full flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-left transition-colors " + ("bg-accent" if str(p["id"]) == activeId else "hover:bg-accent/50")}
                 >
                     <Folder className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate flex-1">{p["name"]}</span>
-                    <span className={"size-2 rounded-full shrink-0 " + dot(p["status"])}></span>
+                    <span className="truncate flex-1">{str(p["name"])}</span>
+                    <span className={"size-2 rounded-full shrink-0 " + dot(str(p["status"]))}></span>
                 </button>
                 for p in projects
             ]}

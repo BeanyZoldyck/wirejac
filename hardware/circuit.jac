@@ -74,7 +74,7 @@ obj HardwareValidation {
 }
 
 
-"""Build the safe, deterministic fixture used by the happy-path demo."""
+"""Build a safe reference ESP32 motion-sensor specification for compiler tests."""
 def make_default_phone_snatch_spec(project_id: str) -> HardwareSpec {
     return HardwareSpec(
         schema_version="wirejac.hardware.v1",

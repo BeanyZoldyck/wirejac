@@ -123,7 +123,8 @@ def _may_revise(status: JobStatus) -> bool {
 
 def _submit_job(
     request: HardwareRequest,
-    idempotency_key: str
+    idempotency_key: str,
+    launch_job: bool = True
 ) -> SubmitJobResponse {
     _validate_request(request);
     _validate_idempotency_key(idempotency_key);
@@ -142,7 +143,9 @@ def _submit_job(
         created=True,
         idempotent_replay=False
     );
-    _ = _launch_job(job.job_id);
+    if launch_job {
+        _ = _launch_job(job.job_id);
+    }
     return response;
 }
 
@@ -290,7 +293,8 @@ def _resolve_gate(
     gate_id: str,
     accepted: bool,
     resolution_note: str,
-    idempotency_key: str
+    idempotency_key: str,
+    launch_job: bool = True
 ) -> MutationResult {
     _validate_idempotency_key(idempotency_key);
     job = _find_owned_job(job_id);
@@ -360,7 +364,9 @@ def _resolve_gate(
     _set_status(job, gate.resume_status, "Gate accepted; job resumed");
     commit();
     view = _job_to_view(job);
-    _ = _launch_job(job.job_id);
+    if launch_job {
+        _ = _launch_job(job.job_id);
+    }
     return MutationResult(
         accepted=True,
         idempotent_replay=False,

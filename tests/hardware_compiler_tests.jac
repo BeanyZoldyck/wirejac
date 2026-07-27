@@ -99,7 +99,7 @@ test "breadboard placement and routing are deterministic" {
     assert first.routes[-1].from_hole == second.routes[-1].from_hole;
     assert first.routes[-1].to_hole == second.routes[-1].to_hole;
     assert holes_share_strip("B24", "A24");
-    assert not holes_share_strip("E27", "F27");
+    assert not holes_share_strip("I16", "I17");
     board = first.placements[0];
     assert len(board.anchors) == 15;
     assert board.anchors[0].hole == "J1";
@@ -109,6 +109,25 @@ test "breadboard placement and routing are deterministic" {
         for anchor in placement.anchors {
             assert anchor.hole not in occupied;
             occupied.add(anchor.hole);
+    button = [
+        placement
+        for placement in first.placements
+        if placement.component_id == "arm_button"
+    ][0];
+    button_holes = {anchor.pin_id: anchor.hole for anchor in button.anchors};
+    assert button_holes["P1"] == "I17";
+    assert button_holes["P2"] == "I16";
+    button_input = [
+        route for route in first.routes if route.net_id == "button_input"
+    ][0];
+    assert button_input.from_hole == "I6";
+    assert button_input.to_hole == "H17";
+    button_ground = [
+        route
+        for route in first.routes
+        if route.from_hole == "H16" and route.to_hole == "TN16"
+    ][0];
+    assert button_ground.color == "#202124";
         }
     }
 }
@@ -136,5 +155,6 @@ test "visual bundle is complete and internally aligned" {
     }
     assert "place-esp32" not in bundle.step_svgs[0];
     assert "wire-button_input-1" in bundle.step_svgs[-1];
+    assert "GND + GPIO19" in bundle.step_svgs[-1];
     assert bundle.step_filenames[-1] == "step-18.svg";
 }

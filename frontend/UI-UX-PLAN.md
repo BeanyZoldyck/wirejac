@@ -202,12 +202,11 @@ The graph is not decoration — it renders live server state. Mapping:
 ## 8. Implementation phases
 
 Each checklist item above is expanded into an ordered phase below. **Front-load
-the visuals:** Phases 0–7 are frontend-only and run against **mock state** (a
-local `demoGraph` + a manual state-cycler), so the whole flow is demoable before
-the real Jac OSP backend exists. Phases 8–9 swap the mock for live `.sv.jac`
-data. Phase 10 is polish.
+the visuals:** Phases 0–7 build the presentation layer against the stable run
+view contract. Phases 8–9 connect that contract to live `.sv.jac` data. Phase
+10 is polish.
 
-> **Critical path:** 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 (mock demo ready) → 8 → 9 → 10 (live demo ready).
+> **Critical path:** 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10.
 > Phases 4, 5, 7 can proceed in parallel once 3 lands. Phase 8 (backend) can be
 > built in parallel with 4–7 by a second track.
 
@@ -319,13 +318,13 @@ cd frontend && jac add --npm @xyflow/react && jac install
 **Tasks:**
 - [ ] Expandable Monitoring node → side/detail panel
 - [ ] Uptime heartbeat strip (green ticks, occasional red) + "Operational / Degraded / Down" line
-- [ ] Live tail: ESP32 serial output + server-ping results (mock data first)
+- [ ] Live tail: ESP32 serial output + server-ping results
 - [ ] Anomaly in the feed lights up the feedback edge
 
-**Deliverable:** monitoring panel with uptime strip + live feed (mock).
+**Deliverable:** monitoring panel with uptime strip + live feed.
 **Done when:** panel renders; an anomaly event highlights the feedback edge.
 
-**→ Milestone: full flow demoable on mock state.**
+**→ Milestone: full flow driven by runtime events.**
 
 ---
 
@@ -366,7 +365,7 @@ cd frontend && jac add --npm @xyflow/react && jac install
 - [ ] Empty / loading / error states for the canvas and panels
 - [ ] Responsive layout; keyboard nav; `prefers-reduced-motion`
 - [ ] Design-language audit (spacing, semantic tokens, no shadows/gradients; squircles + Elms Sans everywhere)
-- [ ] Remove demo/mock controls
+- [ ] Remove obsolete demo controls
 
 **Done when:** clean, on-brand, and demo-ready on Chrome (squircles at full effect).
 

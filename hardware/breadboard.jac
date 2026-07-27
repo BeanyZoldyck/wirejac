@@ -239,12 +239,14 @@ def _part_placement(component: ComponentInstance) -> Placement {
             profile_id=component.profile_id,
             label=component.label,
             anchors=[
-                PinHole(component.component_id, "P1", "E27"),
-                PinHole(component.component_id, "P2", "F27"),
+                # Verified demo orientation: both live leads use the same
+                # physical button side while remaining on separate rows.
+                PinHole(component.component_id, "P1", "I17"),
+                PinHole(component.component_id, "P2", "I16"),
             ],
-            x=558,
-            y=166,
-            width=48,
+            x=332,
+            y=220,
+            width=58,
             height=42,
         );
     }
@@ -298,7 +300,8 @@ def _attachment_hole(placement: Placement, anchor: PinHole) -> str {
         return f"A{row}";
     }
     if placement.profile_id == "button-6mm" {
-        return f"D{row}" if hole[0] == "E" else f"G{row}";
+        # Both live jumpers exit the verified physical side of the button.
+        return f"H{row}";
     }
     return hole;
 }
@@ -358,11 +361,11 @@ def _route_points(
     start = hole_position(from_hole);
     end = hole_position(to_hole);
     # Keep the button ground jumper outside the button body in the SVG.
-    if from_hole == "G27" and to_hole == "TN27" {
+    if from_hole == "H16" and to_hole == "TN16" {
         return [
             RoutePoint(start.x, start.y),
-            RoutePoint(620, start.y),
-            RoutePoint(620, end.y),
+            RoutePoint(426, start.y),
+            RoutePoint(426, end.y),
             RoutePoint(end.x, end.y),
         ];
     }
@@ -492,11 +495,35 @@ def _placement_instruction(placement: Placement) -> str {
     }
     if placement.profile_id == "button-6mm" {
         return (
-            "Place the pushbutton across the center trench at E27 and "
-            "F27 so its two switch sides are on separate terminal strips."
+            "Place the recording button between the ESP32 and GY-521. Put "
+            "its black-ground leg in I16, directly beside ESP32 3V3 at J15, "
+            "and its blue GPIO19 leg in I17 on the same physical button side. "
+            "Leave the opposite-side legs unused."
         );
     }
     return f"Place {placement.label} at its highlighted holes.";
+}
+
+
+def _route_instruction(route: WireRoute) -> str {
+    if route.net_id == "button_input" {
+        return (
+            "Connect I6 to H17 with the blue GPIO19 jumper. Attach it to "
+            "the same physical side of the button as the black ground lead; "
+            "do not use the visually opposite button side."
+        );
+    }
+    if route.from_hole == "H16" and route.to_hole == "TN16" {
+        return (
+            "Connect H16 to TN16 with the black ground jumper. H16 is the "
+            "button ground lead beside ESP32 3V3 at J15."
+        );
+    }
+    return (
+        f"Connect {route.from_hole} to {route.to_hole} with a "
+        f"{_wire_color_name(route.role)} jumper. "
+        f"This is the {route.net_id} net."
+    );
 }
 
 
@@ -538,11 +565,7 @@ def _build_steps(
         steps.append(AssemblyStep(
             number=step_number,
             title=f"Wire {route.net_id}",
-            instruction=(
-                f"Connect {route.from_hole} to {route.to_hole} with a "
-                f"{_wire_color_name(route.role)} jumper. "
-                f"This is the {route.net_id} net."
-            ),
+            instruction=_route_instruction(route),
             visible_placement_ids=visible_placements.copy(),
             visible_route_ids=visible_routes.copy(),
             highlight_ids=[route.route_id],
@@ -578,6 +601,11 @@ def _build_steps(
     }
     verification += ", then receive ready and heartbeat events.";
     if has_button {
+        inspection += (
+            " Confirm the black ground lead is H16 to TN16 and the blue "
+            "GPIO19 lead is I6 to H17. They leave the same physical side of "
+            "the button but occupy separate breadboard rows."
+        );
         verification += " Press the button and verify its expected device event.";
     }
     steps.append(AssemblyStep(

@@ -112,9 +112,17 @@ def author_micropython(
 You are WireJac's MicroPython application author. Return only a structured
 FirmwareApplication. app_source is an application module loaded by a reviewed
 A/B bootstrap, so it must define run() and must not invoke run() itself. Use the
-reviewed WireJac config, events, HTTP, and sensor driver APIs described by the
-schema. Never generate host commands, credentials, bootloaders, flash commands,
-or arbitrary file operations.
+reviewed WireJac APIs exactly as follows: machine exports I2C and Pin;
+drivers.mpu6050 exports MPU6050; wirejac_events exports emit; wirejac_http
+exports post_json; and wirejac_config exports only BUILD_ID, COOLDOWN_MS,
+GYRO_THRESHOLD_DPS, HEARTBEAT_MS, I2C_ADDRESS, INGEST_URL,
+LINEAR_ACCEL_THRESHOLD_G, PIN_BUTTON, PIN_LED, PIN_SCL, PIN_SDA, SAMPLE_HZ,
+and TRIGGER_WINDOW_MS. Imports must be direct and unaliased. Call emit() for
+device events and call post_json() only with INGEST_URL as its first argument.
+Every Pin() call must use a compiled PIN_* constant. Keep mutable state local
+to run(); global and nonlocal declarations are forbidden. Never generate host
+commands, credentials, bootloaders, flash commands, arbitrary file operations,
+dynamic imports, or invented helper APIs.
 """
 );
 sem author_micropython = "Author the constrained MicroPython application for a validated hardware intent.";

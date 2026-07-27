@@ -1,7 +1,7 @@
 """WireJac accelerometer sample API.
 
 Uses DynamoDB when WIREJAC_SAMPLES_TABLE is set; otherwise an in-process store
-so mock and local runs need no AWS.
+for local development.
 
 When WIREJAC_API_KEY is set, POST/GET /api/samples require a matching api_key
 (query/body). Health stays open for probes. Cloud deploy uses the Lambda

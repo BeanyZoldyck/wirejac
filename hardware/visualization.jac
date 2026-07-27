@@ -126,7 +126,7 @@ def visualization_model(
         "project_id": spec.project_id,
         "canvas": {
             "width": 680,
-            "height": 485,
+            "height": 550,
             "coordinate_system": "wirejac-breadboard-v1",
         },
         "breadboard": {
@@ -585,8 +585,14 @@ def _svg_placement(placement: Placement, highlighted: bool) -> str {
             (
                 '<text x="{}" y="{}" text-anchor="middle" '
                 'font-family="sans-serif" font-size="10" '
-                'fill="#202124">BUTTON</text></g>'
-            ).format(placement.x + 24, placement.y - 5),
+                'fill="#202124">BUTTON</text>'
+            ).format(placement.x + 29, placement.y - 5),
+            (
+                '<text x="{}" y="{}" text-anchor="middle" '
+                'font-family="sans-serif" font-size="7" font-weight="700" '
+                'fill="#ffffff">GND + GPIO19</text>'
+            ).format(placement.x + 29, placement.y + 38),
+            "</g>",
         ]);
     }
     return (
@@ -631,9 +637,38 @@ def _svg_route(route: WireRoute, highlighted: bool) -> str {
 }
 
 
+def _instruction_lines(instruction: str) -> list[str] {
+    lines: list[str] = [];
+    current = "";
+    for word in instruction.split(" ") {
+        if not word {
+            continue;
+        }
+        candidate = word if not current else current + " " + word;
+        if len(candidate) <= 86 {
+            current = candidate;
+            continue;
+        }
+        if len(lines) == 1 {
+            return [lines[0], current[:83] + "..."];
+        }
+        lines.append(current);
+        current = word;
+    }
+    if current {
+        lines.append(current);
+    }
+    if len(lines) > 2 {
+        return [lines[0], lines[1][:83] + "..."];
+    }
+    return lines;
+}
+
+
 def render_step_svg(plan: AssemblyPlan, step: AssemblyStep) -> str {
+    instruction_lines = _instruction_lines(step.instruction);
     elements: list[str] = [
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 485" ',
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 550" ',
         'role="img" aria-labelledby="title desc">',
         '<title id="title">Step {}: {}</title>'.format(
             step.number,
@@ -642,7 +677,7 @@ def render_step_svg(plan: AssemblyPlan, step: AssemblyStep) -> str {
         '<desc id="desc">{}</desc>'.format(
             _xml_escape(step.instruction)
         ),
-        '<rect width="680" height="390" fill="#ffffff"/>',
+        '<rect width="680" height="550" fill="#ffffff"/>',
         _svg_breadboard(),
     ];
     for route in plan.routes {
@@ -662,10 +697,22 @@ def render_step_svg(plan: AssemblyPlan, step: AssemblyStep) -> str {
         }
     }
     elements.extend([
-        '<rect x="20" y="449" width="640" height="27" rx="4" ',
+        '<rect x="20" y="446" width="640" height="48" rx="4" ',
+        'fill="#f7f7f4" stroke="#d4d7da"/>',
+    ]);
+    for (index, line) in enumerate(instruction_lines) {
+        elements.append(
+            (
+                '<text x="32" y="{}" font-family="sans-serif" font-size="10" '
+                'fill="#303438">{}</text>'
+            ).format(466 + index * 16, _xml_escape(line))
+        );
+    }
+    elements.extend([
+        '<rect x="20" y="510" width="640" height="28" rx="4" ',
         'fill="#f1f3f4" stroke="#d4d7da"/>',
         (
-            '<text x="32" y="467" font-family="sans-serif" font-size="12" '
+            '<text x="32" y="529" font-family="sans-serif" font-size="12" '
             'font-weight="700" fill="#202124">Step {}: {}</text>'
         ).format(step.number, _xml_escape(step.title)),
         "</svg>",

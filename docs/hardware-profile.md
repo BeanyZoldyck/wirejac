@@ -33,8 +33,10 @@ Disconnect the ESP32 USB cable before touching the breadboard.
 3. Place the 220 ohm resistor from B20 to B24.
 4. Place the LED long anode leg in A24 and short cathode leg in A25. A24 and
    B24 share one terminal strip, connecting the resistor to the anode.
-5. Place the pushbutton across the center trench with one switch side at E27
-   and the other at F27.
+5. Place the recording button between the ESP32 and GY-521. Its black-ground leg goes in I16,
+   directly beside ESP32 3V3 at J15; its blue GPIO19 leg goes in I17. Both
+   live jumpers leave the same physical side of the button. Leave the
+   opposite-side legs unused.
 
 ## Add Jumpers
 
@@ -45,15 +47,17 @@ Disconnect the ESP32 USB cable before touching the breadboard.
 | Black | I14 | TN14 | ESP32 right-side GND to negative rail |
 | Black | I19 | TN19 | GY-521 GND to negative rail |
 | Black | A25 | TN25 | LED cathode to negative rail |
-| Black | G27 | TN27 | Button side 2 to negative rail |
+| Black | H16 | TN16 | Terminal strip for button P2 ground leg at I16 to negative rail |
 | Green | I5 | I21 | ESP32 GPIO21 to GY-521 SDA |
 | Yellow | I2 | I20 | ESP32 GPIO22 to GY-521 SCL |
 | Orange | I7 | C20 | ESP32 GPIO18 to resistor lead 1 |
-| Blue | I6 | D27 | ESP32 GPIO19 to button side 1 |
+| Blue | I6 | H17 | ESP32 GPIO19 to terminal strip for button P1 at I17 |
 
 The resistor lead at B24 and LED anode at A24 need no jumper because they share
 row 24 on the A-E terminal strip. The button uses the ESP32 internal pull-up,
-so pressing it connects GPIO19 to ground and reads active-low.
+so pressing it connects GPIO19 to ground and reads active-low. I16 and I17
+are separate breadboard rows: the black and blue wires are on the same
+physical side of the button, but they must never share one terminal strip.
 
 ## Logical Pin Map
 
@@ -62,9 +66,9 @@ so pressing it connects GPIO19 to ground and reads active-low.
 | I2C data | GPIO21 | GY-521 SDA | 3.3 V logic |
 | I2C clock | GPIO22 | GY-521 SCL | 3.3 V logic |
 | Status LED | GPIO18 | 220 ohm resistor, then LED anode | Output |
-| Test button | GPIO19 | Button side 1 | Input with internal pull-up |
+| Test button | GPIO19 | Button I17 / blue lead | Input with internal pull-up |
 | Sensor power | 3V3 | GY-521 VCC | Never connect this build to VIN/5V |
-| Common ground | Right-side GND | GY-521 GND, LED cathode, button side 2 | Required |
+| Common ground | Right-side GND | GY-521 GND, LED cathode, button P2 at I16 | Required |
 
 The MPU6050 remains at its default I2C address `0x68`; leave AD0 unconnected.
 XDA, XCL, and INT are also unused in this profile.
@@ -81,7 +85,8 @@ Before reconnecting USB:
 1. Confirm the red rail does not connect to the black rail.
 2. Confirm the GY-521 VCC wire reaches J15/ESP32 3V3, not VIN.
 3. Confirm the LED cathode is in A25 and its anode reaches the resistor.
-4. Confirm the pushbutton straddles the E/F trench.
+4. Confirm the button ground lead is at I16 beside ESP32 3V3 J15, and the
+   blue GPIO19 lead is at I17 on the same physical button side.
 5. Compare the completed board with the final generated `step-*.svg`.
 
 Stop immediately if a component becomes warm, emits an odor, or behaves

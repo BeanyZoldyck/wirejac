@@ -354,7 +354,7 @@ def _validate_workspace(name, workspace, allowed_commands):
 def _openrouter(messages, tools=None):
     key = os.environ.get("OPENROUTER_API_KEY", "")
     if not key:
-        raise RuntimeError("OPENROUTER_API_KEY is required unless WIREJAC_MOCK=1")
+        raise RuntimeError("OPENROUTER_API_KEY is required")
     body = {
         "model": os.environ.get("OPENROUTER_MODEL", _DEFAULT_MODEL),
         "messages": messages,
@@ -411,42 +411,6 @@ def _read_workspace_context(workspaces):
 
 
 def _plan_change(prompt, workspaces):
-    if os.environ.get("WIREJAC_MOCK") == "1":
-        text = (prompt or "").lower()
-        needs_store = any(
-            token in text
-            for token in (
-                "store",
-                "history",
-                "database",
-                "persist",
-                "dynamodb",
-                "samples table",
-            )
-        )
-        if needs_store:
-            return {
-                "selected": ["server", "client"],
-                "skipped": {"device": "No firmware change"},
-                "tasks": {
-                    "server": "Expose durable sample ingest/query for: " + prompt,
-                    "client": "Show sample history from the server API for: " + prompt,
-                },
-                "acceptance": [
-                    "GET /api/samples returns stored history",
-                    "No runtime errors",
-                ],
-                "contract_change_expected": False,
-                "deployment_intent": "aws_cdk",
-            }
-        return {
-            "selected": ["client"],
-            "skipped": {"server": "No API change", "device": "No firmware change"},
-            "tasks": {"client": prompt},
-            "acceptance": ["Requested dashboard UI change is present", "No runtime errors"],
-            "contract_change_expected": False,
-            "deployment_intent": "hot_reload",
-        }
     context = _read_workspace_context(workspaces)
     system = """You are the WireJac coordinator. Select only affected workspaces from client, server, and device. Return JSON only with keys selected (array), skipped (object with reasons), tasks (object), acceptance (array), contract_change_expected (boolean), and deployment_intent (hot_reload, restart_server, prepare_device, aws_cdk, deploy_backend, or provision_infra). Use aws_cdk/provision_infra when the server needs new or undeployed AWS resources such as DynamoDB. Every unselected workspace must appear in skipped. Do not modify files."""
     message = _openrouter([
@@ -544,16 +508,6 @@ def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, a
     root, _ = _safe_path(workspace, ".")
     spec_file = root / pathlib.Path(spec_path).name
     before_spec = _read_text(spec_file) if spec_file.exists() else ""
-    if os.environ.get("WIREJAC_MOCK") == "1":
-        valid, checks = _validate_workspace(name, workspace, allowed_commands)
-        return {
-            "success": valid,
-            "summary": f"Mocked and validated {name} change: {task}" if valid else "Mock validation failed",
-            "tool_count": 0,
-            "revision": snapshot,
-            "contract_changed": False,
-            "error": "" if valid else json.dumps(checks),
-        }
     skill_file = root / pathlib.Path(skill_path).name
     skill = _read_text(skill_file) if skill_file.exists() else ""
     spec = before_spec
@@ -657,13 +611,23 @@ def _list_request_history():
             "prompt": "",
             "status": "running",
             "events": [],
+            "hardware_job_id": "",
+            "hardware_status": "",
         })
         item["events"].append(event)
+        if event.get("hardware_job_id"):
+            item["hardware_job_id"] = event["hardware_job_id"]
+        if event.get("hardware_status"):
+            item["hardware_status"] = event["hardware_status"]
         if event.get("node") in {"client", "server", "device"} and event.get("state") == "planned":
-            item["prompt"] = event.get("summary", "")
-            item["name"] = event.get("summary", "Wirejac build")
+            summary = event.get("summary", "")
+            prompt = summary.rsplit("for: ", 1)[-1] if "for: " in summary else summary
+            item["prompt"] = prompt
+            item["name"] = prompt or "WireJac build"
         if event.get("state") == "failed":
             item["status"] = "failed"
+        if event.get("state") == "awaiting_approval" and item["status"] != "failed":
+            item["status"] = "waiting"
         if event.get("node") == "monitoring" and event.get("state") == "succeeded":
             item["status"] = "done"
     history = list(grouped.values())
@@ -676,37 +640,79 @@ def _list_request_history():
     return history
 
 
+def _run_operator_command(variable, label):
+    command = os.environ.get(variable, "").strip()
+    if not command:
+        return False, "", f"{variable} must be configured for {label}"
+    try:
+        completed = subprocess.run(
+            shlex.split(command),
+            cwd=_PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=os.environ.copy(),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, "", f"{label} could not run: {exc}"
+    output = (completed.stdout + "\n" + completed.stderr).strip()[-_MAX_OUTPUT:]
+    if completed.returncode != 0:
+        return False, output, f"{label} exited with status {completed.returncode}"
+    return True, output, ""
+
+
 def _deploy(selected, intent):
     if "device" in selected:
         return {
-            "success": True,
-            "summary": "ESP32 artifact preparation placeholder reached; no board was flashed",
-            "awaiting_approval": True,
-            "artifact": "workspace/device/generated/main.py",
-            "error": "",
-        }
-    if intent == "hot_reload":
-        return {
-            "success": True,
-            "summary": "Client files are validated; external dashboard hot reload placeholder notified",
+            "success": False,
+            "summary": "Device deployment must run through the guarded hardware lifecycle",
             "awaiting_approval": False,
             "artifact": "",
-            "error": "",
+            "error": "DEVICE_LIFECYCLE_REQUIRED",
         }
+    success, output, error = _run_operator_command(
+        "WIREJAC_DEPLOY_COMMAND",
+        "deployment command"
+    )
     return {
-        "success": True,
-        "summary": f"Deterministic deployment placeholder completed for {intent}",
+        "success": success,
+        "summary": (
+            f"Deployment completed for {intent}" if success
+            else "Deployment did not run"
+        ),
         "awaiting_approval": False,
-        "artifact": "",
-        "error": "",
+        "artifact": output,
+        "error": error,
     }
 
 
 def _monitor(acceptance):
-    # Dashboard placeholder: external browser/runtime adapters will replace this.
+    url = os.environ.get("WIREJAC_MONITOR_URL", "").strip()
+    if not url:
+        return {
+            "success": False,
+            "summary": "Monitoring did not run",
+            "errors": ["WIREJAC_MONITOR_URL must be configured for runtime verification"],
+        }
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            status = response.status
+            body = response.read(2048).decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {
+            "success": False,
+            "summary": "Monitoring endpoint was unreachable",
+            "errors": [str(exc)],
+        }
+    if status < 200 or status >= 300:
+        return {
+            "success": False,
+            "summary": f"Monitoring endpoint returned HTTP {status}",
+            "errors": [body],
+        }
     return {
         "success": True,
-        "summary": f"Monitoring placeholder accepted {len(acceptance)} checks",
+        "summary": f"Monitoring endpoint verified {len(acceptance)} acceptance checks",
         "errors": [],
     }
 ::py::
@@ -785,6 +791,8 @@ def emit_activation(event: Activation) -> None {
         "timestamp": event.timestamp,
         "tool_count": event.tool_count,
         "revision": event.revision,
+        "hardware_job_id": event.hardware_job_id,
+        "hardware_status": event.hardware_status,
         "error": event.error
     }));
 }
@@ -805,19 +813,6 @@ def deploy(
     # AWS CDK path: phase one validates and stops at the approval gate. A second
     # call with WIREJAC_APPROVAL_HASH (+ WIREJAC_CONFIRM_DEPLOY=1) completes it.
     if is_aws_intent(effective_intent) {
-        if os.environ.get("WIREJAC_MOCK", "") == "1" {
-            needs = server_infra_needs(rid);
-            names = ", ".join([req.resource_name for req in needs]);
-            return DeploymentResult(
-                success=True,
-                awaiting_approval=True,
-                summary=(
-                    f"Mocked AWS validation for {effective_intent} "
-                    + f"({names}); awaiting approval"
-                ),
-                artifact="mock-change-hash"
-            );
-        }
         approval_hash = os.environ.get("WIREJAC_APPROVAL_HASH", "");
         if approval_hash and os.environ.get("WIREJAC_CONFIRM_DEPLOY", "") == "1" {
             grant = ApprovalGrant(

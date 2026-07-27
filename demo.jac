@@ -35,13 +35,7 @@ with entry:__main__ {
     mode = _execution_mode(
         os.environ.get("WIREJAC_EXECUTION_MODE", "plan")
     );
-    metadata: dict[str, str] = {
-        "generation": os.environ.get("WIREJAC_GENERATION", "fixture")
-    };
-    fixture = os.environ.get("WIREJAC_FIXTURE", "");
-    if fixture {
-        metadata["fixture"] = fixture;
-    }
+    metadata: dict[str, str] = {};
     expected_mac = os.environ.get("WIREJAC_EXPECTED_MAC", "");
     if expected_mac {
         metadata["expected_mac"] = expected_mac;
@@ -55,23 +49,14 @@ with entry:__main__ {
     request = HardwareRequest(
         project_id=f"local-{str(uuid4())}",
         prompt=prompt,
-        allowed_inventory=(
-            [
-                "doit-esp32-devkit-v1-30pin",
-                "gy521-mpu6050",
-                "button",
-                "half-breadboard-400",
-            ]
-            if fixture in ["phone_snatch_motion_test", "motion_test"]
-            else [
-                "doit-esp32-devkit-v1-30pin",
-                "gy521-mpu6050",
-                "led",
-                "220-ohm-resistor",
-                "button",
-                "half-breadboard-400",
-            ]
-        ),
+        allowed_inventory=[
+            "doit-esp32-devkit-v1-30pin",
+            "gy521-mpu6050",
+            "led",
+            "220-ohm-resistor",
+            "button",
+            "half-breadboard-400",
+        ],
         execution_mode=mode,
         device_selector=os.environ.get("WIREJAC_DEVICE", ""),
         provision_policy=policy,

@@ -18,6 +18,14 @@ import from orchestrator.adapters {
     plan_change,
     run_workspace_agent
 }
+import from hardware.contracts { JobStatus }
+import from orchestrator.hardware_bridge {
+    HardwareDispatch,
+    dispatch_hardware_job,
+    hardware_dispatch_snapshot,
+    refresh_hardware_job,
+    resolve_hardware_gate
+}
 
 
 node Coordinator {
@@ -29,6 +37,11 @@ node Coordinator {
         visitor.completed = [];
         visitor.results = {};
         visitor.failed = False;
+        visitor.hardware_job_id = "";
+        visitor.hardware_revision_id = "";
+        visitor.hardware_status = "";
+        visitor.hardware_event_sequence = 0;
+        visitor.awaiting_hardware_gate = False;
         workspaces: list[dict] = [];
         for workspace in [self ->:Dispatch:->][?:Client] {
             workspaces.append(workspace_context(workspace));
@@ -85,6 +98,10 @@ node Workspace {
         allowed_commands: list[str] = [];
 
     can invoke_agent with ChangeRequest entry {
+        if self.kind == WorkspaceKind.DEVICE {
+            visitor.run_hardware_device(self);
+            return;
+        }
         visitor.record(self.name, ActivationState.RUNNING, "Running contained workspace agent");
         task = visitor.plan.tasks.get(self.name, visitor.prompt);
         try {
@@ -143,11 +160,47 @@ node Deployment {
     can execute with ChangeRequest entry {
         visitor.record(self.name, ActivationState.DEPLOYING, "Running deterministic deployment");
         try {
-            visitor.deployment_result = deploy(
-                visitor.plan.selected,
-                visitor.plan.deployment_intent,
-                visitor.request_id
-            );
+            deploy_workspaces = visitor.plan.selected;
+            hardware_ready = True;
+            if visitor.hardware_job_id {
+                hardware = refresh_hardware_job(
+                    visitor.hardware_job_id,
+                    visitor.hardware_event_sequence
+                );
+                visitor.record_hardware_events(hardware);
+                visitor.hardware_status = hardware.status.value;
+                hardware_ready = hardware.success;
+                if not hardware_ready {
+                    visitor.deployment_result = DeploymentResult(
+                        success=False,
+                        summary="Hardware lifecycle is not ready for deployment",
+                        artifact=visitor.hardware_job_id,
+                        error=hardware.error or hardware.summary
+                    );
+                } else {
+                    deploy_workspaces = [
+                        name
+                        for name in visitor.plan.selected
+                        if name != "device"
+                    ];
+                }
+            }
+            if hardware_ready and not deploy_workspaces {
+                visitor.deployment_result = DeploymentResult(
+                    success=True,
+                    summary=(
+                        "Hardware lifecycle completed; no non-device deployment "
+                        + "is required"
+                    ),
+                    artifact=visitor.hardware_job_id
+                );
+            } elif hardware_ready {
+                visitor.deployment_result = deploy(
+                    deploy_workspaces,
+                    visitor.plan.deployment_intent,
+                    visitor.request_id
+                );
+            }
             if visitor.deployment_result.awaiting_approval {
                 visitor.record(
                     self.name,
@@ -189,7 +242,26 @@ node Monitoring {
     can observe with ChangeRequest entry {
         visitor.record(self.name, ActivationState.MONITORING, "Checking acceptance and runtime health");
         try {
-            visitor.monitor_result = monitor(visitor.plan.acceptance);
+            hardware_ready = True;
+            if visitor.hardware_job_id {
+                hardware = refresh_hardware_job(
+                    visitor.hardware_job_id,
+                    visitor.hardware_event_sequence
+                );
+                visitor.record_hardware_events(hardware);
+                visitor.hardware_status = hardware.status.value;
+                hardware_ready = hardware.success;
+                if not hardware_ready {
+                    visitor.monitor_result = MonitorResult(
+                        success=False,
+                        summary="Hardware lifecycle is not healthy",
+                        errors=[hardware.error or hardware.summary]
+                    );
+                }
+            }
+            if hardware_ready {
+                visitor.monitor_result = monitor(visitor.plan.acceptance);
+            }
             if visitor.monitor_result.success {
                 visitor.record(
                     self.name,
@@ -227,18 +299,21 @@ edge Verify {}
 edge Feedback {}
 edge Project {}
 
-glob project_coordinator: Coordinator | None = None;
-
-
 walker ChangeRequest {
     has prompt: str,
         request_id: str = "",
+        emit_reports: bool = True,
         plan: ImpactPlan = ImpactPlan(),
         activations: list[Activation] = [],
         results: dict[str, AgentResult] = {},
         completed: list[str] = [],
         replan_count: int = 0,
         failed: bool = False,
+        hardware_job_id: str = "",
+        hardware_revision_id: str = "",
+        hardware_status: str = "",
+        hardware_event_sequence: int = 0,
+        awaiting_hardware_gate: bool = False,
         deployment_result: DeploymentResult = DeploymentResult(),
         monitor_result: MonitorResult = MonitorResult();
 
@@ -258,10 +333,127 @@ walker ChangeRequest {
             timestamp=now(),
             tool_count=tool_count,
             revision=revision,
+            hardware_job_id=(
+                self.hardware_job_id if node_name == "device" else ""
+            ),
+            hardware_status=(
+                self.hardware_status if node_name == "device" else ""
+            ),
             error=error
         );
         self.activations.append(activation);
         emit_activation(activation);
+    }
+
+    def hardware_activation_state(status: JobStatus) -> ActivationState {
+        if status == JobStatus.QUEUED {
+            return ActivationState.QUEUED;
+        }
+        if status == JobStatus.VALIDATING {
+            return ActivationState.VALIDATING;
+        }
+        if status in [JobStatus.ASSEMBLY_REQUIRED, JobStatus.BLOCKED] {
+            return ActivationState.AWAITING_APPROVAL;
+        }
+        if status in [JobStatus.PROVISIONING, JobStatus.DEPLOYING] {
+            return ActivationState.DEPLOYING;
+        }
+        if status == JobStatus.VERIFYING {
+            return ActivationState.MONITORING;
+        }
+        if status == JobStatus.SUCCEEDED {
+            return ActivationState.SUCCEEDED;
+        }
+        if status in [
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+            JobStatus.INTERRUPTED,
+            JobStatus.ROLLED_BACK,
+        ] {
+            return ActivationState.FAILED;
+        }
+        return ActivationState.RUNNING;
+    }
+
+    def record_hardware_events(result: HardwareDispatch) {
+        for event in result.events {
+            if event.sequence <= self.hardware_event_sequence {
+                continue;
+            }
+            event_error = "";
+            if event.status in [
+                JobStatus.FAILED,
+                JobStatus.CANCELLED,
+                JobStatus.INTERRUPTED,
+                JobStatus.ROLLED_BACK,
+            ] {
+                event_error = event.message;
+            }
+            self.record(
+                "device",
+                self.hardware_activation_state(event.status),
+                event.message,
+                revision=result.revision_id,
+                error=event_error
+            );
+            self.hardware_event_sequence = event.sequence;
+        }
+    }
+
+    def run_hardware_device(workspace: Workspace) {
+        self.record(workspace.name, ActivationState.RUNNING, "Running guarded hardware lifecycle");
+        task = self.plan.tasks.get(workspace.name, self.prompt);
+        hardware = dispatch_hardware_job(
+            self.request_id,
+            self.prompt,
+            task,
+            self.replan_count
+        );
+        self.hardware_job_id = hardware.job_id;
+        self.hardware_revision_id = hardware.revision_id;
+        self.hardware_status = hardware.status.value;
+        self.record_hardware_events(hardware);
+        gate_ids = [gate.gate_id for gate in hardware.open_gates];
+        self.results[workspace.name] = AgentResult(
+            success=hardware.success,
+            summary=hardware.summary,
+            revision=hardware.revision_id,
+            hardware_job_id=hardware.job_id,
+            hardware_status=hardware.status.value,
+            hardware_gate_ids=gate_ids,
+            error=hardware.error
+        );
+        if hardware.awaiting_gate {
+            self.awaiting_hardware_gate = True;
+            for gate in hardware.open_gates {
+                self.record(
+                    workspace.name,
+                    ActivationState.AWAITING_APPROVAL,
+                    "Hardware gate " + gate.gate_id + ": " + gate.title
+                    + " - " + gate.instructions,
+                    revision=hardware.revision_id
+                );
+            }
+        } elif hardware.success {
+            if workspace.name not in self.completed {
+                self.completed.append(workspace.name);
+            }
+            self.record(
+                workspace.name,
+                ActivationState.SUCCEEDED,
+                hardware.summary,
+                revision=hardware.revision_id
+            );
+        } else {
+            self.failed = True;
+            self.record(
+                workspace.name,
+                ActivationState.FAILED,
+                hardware.summary,
+                revision=hardware.revision_id,
+                error=hardware.error
+            );
+        }
     }
 
     can begin with Root entry {
@@ -276,23 +468,25 @@ walker ChangeRequest {
             if self.replan_count > here.max_replans {
                 self.record(here.name, ActivationState.FAILED, "Replan limit exceeded");
             }
-            report self.activations;
+            if self.emit_reports {
+                report self.activations;
+            }
             disengage;
         }
         for workspace in [here ->:Dispatch:->][?:Client] {
-            if workspace.name in self.plan.selected {
+            if workspace.name in self.plan.selected and workspace.name not in self.completed {
                 self.record(workspace.name, ActivationState.QUEUED, "Selected by Coordinator");
                 visit workspace;
             }
         }
         for workspace in [here ->:Dispatch:->][?:Server] {
-            if workspace.name in self.plan.selected {
+            if workspace.name in self.plan.selected and workspace.name not in self.completed {
                 self.record(workspace.name, ActivationState.QUEUED, "Selected by Coordinator");
                 visit workspace;
             }
         }
         for workspace in [here ->:Dispatch:->][?:Device] {
-            if workspace.name in self.plan.selected {
+            if workspace.name in self.plan.selected and workspace.name not in self.completed {
                 self.record(workspace.name, ActivationState.QUEUED, "Selected by Coordinator");
                 visit workspace;
             }
@@ -301,7 +495,12 @@ walker ChangeRequest {
 
     can route_workspace with Workspace exit {
         result = self.results.get(here.name);
-        if result and result.contract_changed {
+        if self.awaiting_hardware_gate {
+            if self.emit_reports {
+                report self.activations;
+            }
+            disengage;
+        } elif result and result.contract_changed {
             self.replan_count += 1;
             self.record(
                 here.name,
@@ -315,7 +514,9 @@ walker ChangeRequest {
             );
             visit [here <-:Dispatch:<-][?:Coordinator];
         } elif self.failed {
-            report self.activations;
+            if self.emit_reports {
+                report self.activations;
+            }
             disengage;
         } elif len(self.completed) == len(self.plan.selected) {
             visit [here ->:ReadyToDeploy:->][?:Deployment];
@@ -324,12 +525,16 @@ walker ChangeRequest {
 
     can route_deployment with Deployment exit {
         if self.deployment_result.awaiting_approval {
-            report self.activations;
+            if self.emit_reports {
+                report self.activations;
+            }
             disengage;
         }
         if self.failed or not self.deployment_result.success {
             self.failed = True;
-            report self.activations;
+            if self.emit_reports {
+                report self.activations;
+            }
             disengage;
         }
         visit [here ->:Verify:->][?:Monitoring];
@@ -337,7 +542,9 @@ walker ChangeRequest {
 
     can route_monitoring with Monitoring exit {
         if self.monitor_result.success {
-            report self.activations;
+            if self.emit_reports {
+                report self.activations;
+            }
             disengage;
         }
         self.replan_count += 1;
@@ -412,6 +619,51 @@ walker:pub GraphSnapshot {
 }
 
 
+walker:pub HardwareJobStatus {
+    has job_id: str,
+        after_sequence: int = 0,
+        reports: list[dict] = [];
+
+    can status with Root entry {
+        report hardware_dispatch_snapshot(
+            refresh_hardware_job(self.job_id, self.after_sequence)
+        );
+        disengage;
+    }
+}
+
+
+walker:pub ResolveHardwareGate {
+    has job_id: str,
+        gate_id: str,
+        accepted: bool,
+        resolution_note: str = "",
+        prompt: str = "",
+        request_id: str = "",
+        reports: list[dict] = [];
+
+    can resolve with Root entry {
+        result = resolve_hardware_gate(
+            self.job_id,
+            self.gate_id,
+            self.accepted,
+            self.resolution_note,
+            "graph-gate:" + self.job_id + ":" + self.gate_id + ":" + str(self.accepted)
+        );
+        report hardware_dispatch_snapshot(result);
+        if self.accepted and result.success and self.prompt and self.request_id {
+            request = ChangeRequest(
+                prompt=self.prompt,
+                request_id=self.request_id,
+                emit_reports=False
+            );
+            root spawn request;
+        }
+        disengage;
+    }
+}
+
+
 def validate_plan(plan: ImpactPlan, workspaces: list[dict]) -> str {
     known = [workspace["name"] for workspace in workspaces];
     if not plan.selected {
@@ -463,14 +715,10 @@ def graph_complete(coordinator: Coordinator) -> bool {
 
 
 def ensure_graph() -> Coordinator {
-    if project_coordinator is not None and graph_complete(project_coordinator) {
-        return project_coordinator;
-    }
     graph_root = root;
     try {
         existing = [graph_root ->:Project:->][?:Coordinator];
         if existing and graph_complete(existing[0]) {
-            project_coordinator = existing[0];
             return existing[0];
         }
     } except Exception {
@@ -512,6 +760,5 @@ def ensure_graph() -> Coordinator {
     device +>:ReadyToDeploy():+> deployment;
     deployment +>:Verify():+> monitoring;
     monitoring +>:Feedback():+> coordinator;
-    project_coordinator = coordinator;
     return coordinator;
 }
