@@ -19,7 +19,7 @@ obj ComponentIntent {
         quantity: int = 1;
 }
 sem ComponentIntent.reference = "Stable short component reference such as esp32 or imu.";
-sem ComponentIntent.kind = "Concrete inventory component type.";
+sem ComponentIntent.kind = "Exact component identifier copied verbatim from HardwareRequest.allowed_inventory.";
 sem ComponentIntent.purpose = "Why this component is required by the requested device.";
 sem ComponentIntent.required = "Whether the design cannot function without this component.";
 sem ComponentIntent.quantity = "Number of identical components required.";
@@ -92,9 +92,13 @@ def plan_hardware(request: HardwareRequest) -> HardwareIntent by llm(
     system_prompt="""
 You are WireJac's constrained embedded systems planner. Produce a breadboard
 design for the exact board profile and allowed inventory in the request.
-Do not invent components. Use 3.3 V-safe wiring, avoid ESP32 flash/strap pins,
-and describe only the embedded subsystem. Deployment and host shell commands
-are outside your authority.
+Do not invent components. Every ComponentIntent.kind must exactly match an
+entry in request.allowed_inventory; use a short stable reference such as
+esp32, imu, record_button, or breadboard, and make every
+SignalIntent.component_reference match one of those references. Use 3.3 V-safe
+wiring, include the shared ESP32/peripheral ground requirement, avoid ESP32
+flash/strap pins, and describe only the embedded subsystem. Deployment and host
+shell commands are outside your authority.
 """
 );
 sem plan_hardware = "Turn a coordinator hardware request into a typed, compilable hardware intent.";

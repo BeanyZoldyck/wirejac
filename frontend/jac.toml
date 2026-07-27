@@ -54,7 +54,7 @@ watchdog = ">=3.0.0"
 [serve]
 base_route_app = "app"
 
-[plugins.client.vite]
+[client.vite]
 plugins = ["tailwindcss()", "wirejacExternalComponentDependencies()"]
 lib_imports = [
   "import tailwindcss from '@tailwindcss/vite'",

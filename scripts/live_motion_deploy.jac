@@ -29,13 +29,19 @@ with entry:__main__ {
             "Repair the rejected phone-snatch motion design and deploy it to "
             "the connected ESP32. The assembled circuit is fixed: GY-521 SDA "
             "is GPIO21, GY-521 SCL is GPIO22, and the active-low recording "
-            "button is GPIO19 to GND using the internal pull-up. Preserve "
-            "those assignments and do not use ESP32 boot-strapping GPIOs. "
+            "button is GPIO19 to GND using the internal pull-up. GY-521 VCC "
+            "is ESP32 3V3, and GY-521 GND and the button ground share ESP32 "
+            "GND. Preserve those assignments and do not use ESP32 "
+            "boot-strapping GPIOs. "
             "The MicroPython application must emit sensor.detected after the "
             "MPU6050 responds at 0x68, wirejac.ready after self-test, periodic "
             "wirejac.heartbeat events, recording.started/recording.stopped on "
             "button presses, and motion.sample readings over serial while "
-            "recording."
+            "recording. The previous firmware revision was rejected for "
+            "inventing HEARTBEAT_INTERVAL_S, SAMPLE_INTERVAL_MS, emit_event, "
+            "and an events-module post_json, and for declaring global state. "
+            "Use only the reviewed direct APIs supplied by the authoring "
+            "contract and keep all mutable state inside run()."
         ),
         allowed_inventory=[
             "doit-esp32-devkit-v1-30pin",
