@@ -5,8 +5,10 @@ sv import from .endpoints {
     get_hardware_job,
     get_request_events,
     get_request_history,
+    resolve_followup_hardware_approval,
     resolve_hardware_approval,
-    submit_build
+    submit_build,
+    submit_project_followup
 }
 import from react { useEffect }
 import from "lucide-react" { Folder, Plus }
@@ -18,9 +20,32 @@ import from .MonitoringBar { MonitoringBar }
 import from .TopBar { TopBar }
 
 
-def build_status(events: list[dict], hardware: dict) -> str {
+def latest_followup_route(events: list[dict]) -> str {
+    route = "";
+    for event in events {
+        summary = str(event.get("summary", ""));
+        if summary.startswith("User follow-up: ") {
+            text = summary.lower();
+            is_hardware = "hardware" in text;
+            is_frontend = "frontend" in text;
+            if is_hardware and not is_frontend { route = "hardware"; }
+            elif is_frontend and not is_hardware { route = "frontend"; }
+        }
+    }
+    return route;
+}
+
+
+def build_status(events: list[dict], hardware: dict, route: str = "") -> str {
     status = "running";
     for event in events {
+        state = str(event.get("state", ""));
+        if state in [
+            "planned", "queued", "running", "repairing", "replanning",
+            "validating", "deploying", "monitoring"
+        ] {
+            status = "running";
+        }
         if event.get("state") == "awaiting_approval" {
             status = "waiting";
         }
@@ -31,10 +56,17 @@ def build_status(events: list[dict], hardware: dict) -> str {
             status = "done";
         }
     }
-    hardware_status = str(hardware.get("status", ""));
-    if hardware.get("awaiting_gate") { status = "waiting"; }
-    if hardware_status in ["failed", "cancelled", "interrupted", "rolled_back"] {
-        status = "failed";
+    if route != "frontend" {
+        hardware_status = str(hardware.get("status", ""));
+        if hardware.get("awaiting_gate") {
+            status = "waiting";
+        } elif hardware_status in ["failed", "cancelled", "interrupted", "rolled_back"] {
+            status = "failed";
+        } elif hardware_status == "succeeded" {
+            status = "done";
+        } elif hardware_status {
+            status = "running";
+        }
     }
     return status;
 }
@@ -53,56 +85,127 @@ def:pub Dashboard(project: dict) -> JsxElement {
     has status: str = str(project.get("status", "running"));
     has hardware: dict = project.get("hardware", {});
     has resolvingHardware: bool = False;
+    has followupRoute: str = latest_followup_route(events);
+    has followupHardware: bool = followupRoute == "hardware";
+    has followupRunNonce: int = 0;
+    has activeHardwareJobId: str = str(project.get("hardware_job_id", ""));
     has simpleView: bool = False;
     request_id = str(project.get("id", ""));
     prompt = str(project.get("prompt", project.get("name", "")));
-    hardware_job_id = str(project.get("hardware_job_id", ""));
 
     def set_simple(value: bool) {
         simpleView = value;
     }
 
     async def refresh() {
-        if status in ["done", "failed", "waiting"] {
+        if status in ["done", "failed"] or (
+            status == "waiting" and followupRoute != "frontend"
+        ) {
             return;
         }
         if request_id and not request_id.startswith("pending-") {
             nonce = int(Date.now());
             fresh_events = await get_request_events(request_id, nonce);
             fresh_hardware = hardware;
-            if hardware_job_id {
-                fresh_hardware = await get_hardware_job(hardware_job_id, nonce);
+            if activeHardwareJobId {
+                fresh_hardware = await get_hardware_job(activeHardwareJobId, nonce);
                 hardware = fresh_hardware;
             }
             events = fresh_events;
-            status = build_status(fresh_events, fresh_hardware);
+            status = build_status(fresh_events, fresh_hardware, followupRoute);
         }
     }
 
     async def resolve_hardware(gate_id: str, accepted: bool) {
         resolvingHardware = True;
+        followupRoute = "hardware";
         try {
-            result = await resolve_hardware_approval(
-                str(hardware.get("job_id", hardware_job_id)),
-                gate_id,
-                accepted,
-                prompt,
-                request_id
-            );
+            if followupHardware {
+                result = await resolve_followup_hardware_approval(
+                    str(hardware.get("job_id", activeHardwareJobId)),
+                    gate_id,
+                    accepted,
+                    request_id
+                );
+            } else {
+                result = await resolve_hardware_approval(
+                    str(hardware.get("job_id", activeHardwareJobId)),
+                    gate_id,
+                    accepted,
+                    prompt,
+                    request_id
+                );
+            }
             hardware = result.get("hardware", {});
+            activeHardwareJobId = str(hardware.get("job_id", activeHardwareJobId));
             events = result.get("events", events);
-            status = build_status(events, hardware);
+            status = build_status(events, hardware, "hardware");
         } except Exception {
             status = "failed";
         }
         resolvingHardware = False;
     }
 
+    async def submit_followup(message: str, files: any) {
+        _ = files;
+        text = message.lower();
+        route = (
+            "hardware" if "hardware" in text and "frontend" not in text else (
+                "frontend" if "frontend" in text and "hardware" not in text else ""
+            )
+        );
+        followupRoute = route;
+        followupRunNonce = int(Date.now());
+        status = "running";
+        events = events + [{
+            "request_id": request_id,
+            "node": "coordinator",
+            "state": "running",
+            "summary": "User follow-up: " + message,
+            "timestamp": "",
+            "tool_count": 0,
+            "revision": "",
+            "hardware_job_id": "",
+            "hardware_status": "",
+            "error": ""
+        }];
+        try {
+            result = await submit_project_followup(
+                request_id,
+                prompt,
+                message,
+                followupRunNonce
+            );
+            followupRoute = str(result.get("route", route));
+            followupHardware = followupRoute == "hardware";
+            if followupHardware {
+                hardware = result.get("hardware", {});
+                activeHardwareJobId = str(hardware.get("job_id", ""));
+            }
+            events = result.get("events", events);
+            status = build_status(events, hardware, followupRoute);
+        } except Exception as error {
+            events = events + [{
+                "request_id": request_id,
+                "node": "coordinator",
+                "state": "failed",
+                "summary": "Follow-up routing failed",
+                "timestamp": "",
+                "tool_count": 0,
+                "revision": "",
+                "hardware_job_id": "",
+                "hardware_status": "",
+                "error": str(error)
+            }];
+            status = "failed";
+        }
+    }
+
     useEffect(lambda {
         refresh();
         interval = setInterval(lambda { refresh(); }, 1000);
         return lambda { clearInterval(interval); };
-    }, [request_id, hardware_job_id]);
+    }, [request_id, activeHardwareJobId, followupRunNonce]);
 
     return <div className="h-full w-full flex flex-col bg-background text-foreground">
         <TopBar
@@ -122,6 +225,7 @@ def:pub Dashboard(project: dict) -> JsxElement {
                     hardware={hardware}
                     resolvingHardware={resolvingHardware}
                     onResolveHardware={resolve_hardware}
+                    onFollowup={submit_followup}
                 />
             </div>
         </div>

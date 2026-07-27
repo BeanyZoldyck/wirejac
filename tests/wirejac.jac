@@ -34,8 +34,8 @@ test "impact plans require complete routing decisions" {
 }
 
 
-test "jac mcp is scoped to client and device agents" {
-    assert workspace_has_jac_mcp("client");
+test "jac mcp is scoped to the Jac device agent" {
+    assert not workspace_has_jac_mcp("client");
     assert workspace_has_jac_mcp("device");
     assert not workspace_has_jac_mcp("server");
     assert not workspace_has_jac_mcp("coordinator");

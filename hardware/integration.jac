@@ -32,7 +32,8 @@ import from hardware.contracts {
 import from hardware.firmware {
     FirmwareBundle,
     FirmwarePins,
-    compile_firmware
+    compile_firmware,
+    validate_firmware
 }
 import from hardware.graph {
     AssemblyStepNode,
@@ -68,7 +69,9 @@ import from hardware.planning {
     HardwareIntent,
     author_micropython,
     hardware_intent_json,
-    plan_hardware
+    plan_hardware,
+    repair_hardware,
+    repair_micropython
 }
 import from hardware.visualization {
     VisualizationBundle,
@@ -222,6 +225,22 @@ def _intent_for(context: PhaseContext) -> HardwareIntent {
         return cached;
     }
     intent = plan_hardware(context.request);
+    for _ in range(3) {
+        candidate = compile_hardware_intent(
+            intent,
+            context.request.project_id
+        );
+        validation = validate_hardware(candidate);
+        if validation.valid {
+            break;
+        }
+        errors = [
+            issue.code + ": " + issue.message
+            for issue in validation.issues
+            if issue.severity == "error"
+        ];
+        intent = repair_hardware(context.request, intent, errors);
+    }
     _intents[context.revision_id] = intent;
     return intent;
 }
@@ -245,7 +264,20 @@ def _application_for(
     context: PhaseContext,
     intent: HardwareIntent
 ) -> FirmwareApplication {
-    return author_micropython(context.request, intent);
+    application = author_micropython(context.request, intent);
+    for _ in range(3) {
+        errors = validate_firmware(application);
+        if not errors {
+            return application;
+        }
+        application = repair_micropython(
+            context.request,
+            intent,
+            application,
+            errors
+        );
+    }
+    return application;
 }
 
 

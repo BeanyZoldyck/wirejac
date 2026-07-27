@@ -80,7 +80,8 @@ _FORBIDDEN_NAMES = _FORBIDDEN_CALLS | {
 }
 _PIN_CONSTANTS = {"PIN_BUTTON", "PIN_LED", "PIN_SCL", "PIN_SDA"}
 _PIN_ATTRIBUTES = {"IN", "OPEN_DRAIN", "OUT", "PULL_DOWN", "PULL_UP"}
-_DIRECT_CALL_ONLY = {"I2C", "MPU6050", "Pin", "post_json"}
+_DIRECT_CALL_ONLY = {"I2C", "MPU6050", "Pin", "emit", "post_json"}
+_MPU6050_ATTRIBUTES = {"initialize", "read", "who_am_i"}
 _MAX_FILE_BYTES = 48 * 1024
 _MAX_BUNDLE_BYTES = 256 * 1024
 
@@ -173,6 +174,15 @@ def validate_application(source: str) -> list[str]:
         for parent in ast.walk(tree)
         for child in ast.iter_child_nodes(parent)
     }
+    mpu6050_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and _direct_name(node.value) == "MPU6050"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
     has_run = False
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -258,10 +268,24 @@ def validate_application(source: str) -> list[str]:
                         "app.py post_json() must use compiled INGEST_URL "
                         f"at line {node.lineno}"
                     )
+            if call_name == "emit" and len(node.args) != 1:
+                issues.append(
+                    "app.py emit() requires exactly one positional event name; "
+                    f"fields must be keyword arguments at line {node.lineno}"
+                )
         elif isinstance(node, ast.Attribute):
             if node.attr in _FORBIDDEN_ATTRIBUTES or node.attr.startswith("_"):
                 issues.append(
                     f"app.py accesses forbidden operation '{node.attr}' at line {node.lineno}"
+                )
+            if (
+                isinstance(node.value, ast.Name)
+                and node.value.id in mpu6050_names
+                and node.attr not in _MPU6050_ATTRIBUTES
+            ):
+                issues.append(
+                    "app.py uses unsupported MPU6050 member "
+                    f"'{node.attr}' at line {node.lineno}; use initialize() and read()"
                 )
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             issues.append(

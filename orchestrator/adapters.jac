@@ -26,7 +26,6 @@ import asyncio
 import datetime
 import fnmatch
 import hashlib
-import io
 import json
 import os
 import pathlib
@@ -42,9 +41,9 @@ _EVENT_FILE = _PROJECT_ROOT / "runtime" / "events" / "events.jsonl"
 _SNAPSHOT_ROOT = _PROJECT_ROOT / "runtime" / "snapshots"
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
-_MAX_TOOL_TURNS = 10
+_MAX_TOOL_TURNS = 20
 _MAX_OUTPUT = 12000
-_JAC_MCP_WORKSPACES = {"client", "device"}
+_JAC_MCP_WORKSPACES = {"device"}
 _JAC_MCP_TOOLS = {
     "validate_jac",
     "check_syntax",
@@ -421,6 +420,7 @@ def _plan_change(prompt, workspaces):
 
 
 async def _workspace_agent_loop(
+    request_id,
     name,
     workspace,
     allowed_commands,
@@ -430,12 +430,33 @@ async def _workspace_agent_loop(
 ):
     tool_count = 0
     final = None
-    for _ in range(_MAX_TOOL_TURNS):
+    for turn in range(_MAX_TOOL_TURNS):
+        _emit_event({
+            "request_id": request_id,
+            "node": name,
+            "state": "running",
+            "summary": f"{name.title()} agent reasoning turn {turn + 1}: inspecting, implementing, and validating the requested change",
+            "tool_count": tool_count,
+            "revision": "",
+            "hardware_job_id": "",
+            "hardware_status": "",
+            "error": "",
+        })
         message = _openrouter(messages, tools)
         messages.append(message)
         calls = message.get("tool_calls") or []
         if not calls:
-            candidate = _extract_json(message.get("content"))
+            try:
+                candidate = _extract_json(message.get("content"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Your final response was not valid JSON. Return JSON only with "
+                        "success (boolean), summary (string), and error (string)."
+                    ),
+                })
+                continue
             if candidate.get("success"):
                 valid, checks = _validate_workspace(name, workspace, allowed_commands)
                 if not valid:
@@ -453,6 +474,28 @@ async def _workspace_agent_loop(
         for call in calls:
             tool_count += 1
             function = call["function"]
+            labels = {
+                "list_files": "Inventorying the existing frontend workspace",
+                "read_file": "Reading the current mini-app source",
+                "search_text": "Tracing the relevant frontend implementation",
+                "write_file": "Writing the requested frontend change",
+                "run_command": "Running a contained frontend validation command",
+                "validate_jac": "Validating Jac client code",
+                "check_syntax": "Checking Jac syntax",
+                "format_jac": "Formatting Jac client code",
+                "lint_jac": "Linting Jac client code",
+            }
+            _emit_event({
+                "request_id": request_id,
+                "node": name,
+                "state": "running",
+                "summary": labels.get(function["name"], f"Running contained tool {function['name']}"),
+                "tool_count": tool_count,
+                "revision": "",
+                "hardware_job_id": "",
+                "hardware_status": "",
+                "error": "",
+            })
             try:
                 arguments = json.loads(function.get("arguments") or "{}")
                 if mcp_session is not None and function["name"] in _JAC_MCP_TOOLS:
@@ -475,11 +518,11 @@ async def _workspace_agent_loop(
     return final, tool_count
 
 
-async def _workspace_agent_live(name, workspace, allowed_commands, messages):
+async def _workspace_agent_live(request_id, name, workspace, allowed_commands, messages):
     tools = _tool_schemas()
     if not _jac_mcp_enabled(name):
         return await _workspace_agent_loop(
-            name, workspace, allowed_commands, messages, tools, None
+            request_id, name, workspace, allowed_commands, messages, tools, None
         )
 
     from mcp import ClientSession, StdioServerParameters
@@ -492,14 +535,13 @@ async def _workspace_agent_live(name, workspace, allowed_commands, messages):
         cwd=root,
         env={"PATH": os.environ.get("PATH", "")},
     )
-    errlog = io.StringIO()
-    async with stdio_client(server, errlog=errlog) as (reader, writer):
+    async with stdio_client(server) as (reader, writer):
         async with ClientSession(reader, writer) as session:
             await asyncio.wait_for(session.initialize(), timeout=15)
             inventory = await asyncio.wait_for(session.list_tools(), timeout=15)
             tools.extend(_jac_mcp_tool_schemas(inventory.tools))
             return await _workspace_agent_loop(
-                name, workspace, allowed_commands, messages, tools, session
+                request_id, name, workspace, allowed_commands, messages, tools, session
             )
 
 
@@ -524,7 +566,9 @@ def _workspace_agent(request_id, name, workspace, skill_path, spec_path, task, a
     ]
     try:
         final, tool_count = asyncio.run(
-            _workspace_agent_live(name, workspace, allowed_commands, messages)
+            _workspace_agent_live(
+                request_id, name, workspace, allowed_commands, messages
+            )
         )
     except Exception as exc:
         return {
@@ -624,9 +668,15 @@ def _list_request_history():
             prompt = summary.rsplit("for: ", 1)[-1] if "for: " in summary else summary
             item["prompt"] = prompt
             item["name"] = prompt or "WireJac build"
-        if event.get("state") == "failed":
+        state = event.get("state", "")
+        if state in {
+            "planned", "queued", "running", "repairing", "replanning",
+            "validating", "deploying", "monitoring",
+        }:
+            item["status"] = "running"
+        if state == "failed":
             item["status"] = "failed"
-        if event.get("state") == "awaiting_approval" and item["status"] != "failed":
+        if state == "awaiting_approval":
             item["status"] = "waiting"
         if event.get("node") == "monitoring" and event.get("state") == "succeeded":
             item["status"] = "done"

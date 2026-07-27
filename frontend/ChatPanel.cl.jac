@@ -12,7 +12,8 @@ def:pub ChatPanel(
     status: str,
     hardware: dict,
     resolvingHardware: bool,
-    onResolveHardware: Callable[[str, bool], None]
+    onResolveHardware: Callable[[str, bool], None],
+    onFollowup: Callable[[str, any], None]
 ) -> JsxElement {
     has scrollRef: Ref[HTMLDivElement] = Ref();
     messages = chat_from_events(events);
@@ -23,8 +24,6 @@ def:pub ChatPanel(
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }
-
-    def handle_followup(message: str, files: any) {}
 
     return <div className="h-full flex flex-col bg-background border-l border-border">
         <div className="px-4 py-3 border-b border-border shrink-0">
@@ -56,8 +55,8 @@ def:pub ChatPanel(
             ]}
             {<Thinking /> if streaming else <></>}
         </div>
-        <div className="hidden lg:block p-3 border-t border-border shrink-0">
-            <PromptInputBox placeholder="Follow-up support coming next" onSend={handle_followup} />
+        <div className="p-3 border-t border-border shrink-0">
+            <PromptInputBox placeholder="Include hardware or frontend in your request..." onSend={onFollowup} />
         </div>
     </div>;
 }

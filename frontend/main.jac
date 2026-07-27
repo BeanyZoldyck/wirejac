@@ -9,8 +9,12 @@ import from endpoints {
     get_request_events,
     get_request_history,
     ping,
+    resolve_followup_hardware_approval,
     resolve_hardware_approval,
-    submit_build
+    submit_build,
+    submit_frontend_followup,
+    submit_hardware_followup,
+    submit_project_followup
 }
 
 # Client-side UI

@@ -40,6 +40,9 @@ with entry:__main__ {
             "recording. The previous firmware revision was rejected for "
             "inventing HEARTBEAT_INTERVAL_S, SAMPLE_INTERVAL_MS, emit_event, "
             "and an events-module post_json, and for declaring global state. "
+            "A later revision failed physical verification because it called "
+            "emit with a positional payload and invented MPU6050 wake, "
+            "acceleration, and gyro members. "
             "Use only the reviewed direct APIs supplied by the authoring "
             "contract and keep all mutable state inside run()."
         ),

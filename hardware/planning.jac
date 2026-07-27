@@ -105,6 +105,29 @@ sem plan_hardware = "Turn a coordinator hardware request into a typed, compilabl
 sem plan_hardware.request = "Coordinator request including prompt, board, inventory, and integration contract.";
 
 
+def repair_hardware(
+    request: HardwareRequest,
+    previous_intent: HardwareIntent,
+    validation_errors: list[str]
+) -> HardwareIntent by llm(
+    temperature=0.0,
+    max_tokens=4000,
+    max_output_retries=2,
+    system_prompt="""
+You are WireJac's electrical-design repair agent. Correct the supplied intent
+using every validator diagnostic. Preserve the requested behavior and physical
+wiring. Every component kind must exactly match request.allowed_inventory,
+every signal component_reference must match a component reference, all
+peripherals must share ESP32 ground, and no flash, reserved, or boot-strapping
+GPIO may be assigned. Return a corrected typed intent only.
+"""
+);
+sem repair_hardware = "Repair an LLM hardware intent from deterministic electrical-rule diagnostics.";
+sem repair_hardware.request = "Original immutable coordinator request and physical constraints.";
+sem repair_hardware.previous_intent = "The rejected typed hardware intent.";
+sem repair_hardware.validation_errors = "Exact deterministic validator errors that must all be fixed.";
+
+
 def author_micropython(
     request: HardwareRequest,
     intent: HardwareIntent
@@ -124,14 +147,52 @@ LINEAR_ACCEL_THRESHOLD_G, PIN_BUTTON, PIN_LED, PIN_SCL, PIN_SDA, SAMPLE_HZ,
 and TRIGGER_WINDOW_MS. Imports must be direct and unaliased. Call emit() for
 device events and call post_json() only with INGEST_URL as its first argument.
 Every Pin() call must use a compiled PIN_* constant. Keep mutable state local
-to run(); global and nonlocal declarations are forbidden. Never generate host
-commands, credentials, bootloaders, flash commands, arbitrary file operations,
-dynamic imports, or invented helper APIs.
+to run(); global and nonlocal declarations are forbidden. Construct the sensor
+with MPU6050(i2c, I2C_ADDRESS), call initialize() once, and obtain readings only
+with `accel, gyro, temperature = sensor.read()`. No other MPU6050 members exist.
+Call emit with exactly one positional string event name and keyword fields, for
+example `emit("wirejac.ready", build=BUILD_ID)`. Never pass a payload dict as a
+second positional argument. Never generate host commands, credentials,
+bootloaders, flash commands, arbitrary file operations, dynamic imports, or
+invented helper APIs.
 """
 );
 sem author_micropython = "Author the constrained MicroPython application for a validated hardware intent.";
 sem author_micropython.request = "Original coordinator request and backend integration contract.";
 sem author_micropython.intent = "Validated component, signal, behavior, and telemetry plan.";
+
+
+def repair_micropython(
+    request: HardwareRequest,
+    intent: HardwareIntent,
+    previous_application: FirmwareApplication,
+    validation_errors: list[str]
+) -> FirmwareApplication by llm(
+    temperature=0.0,
+    max_tokens=8000,
+    max_output_retries=2,
+    system_prompt="""
+You are WireJac's constrained MicroPython repair agent. Correct the rejected
+FirmwareApplication using every sandbox diagnostic. Use `from machine import
+I2C, Pin`, never `import machine`. The only WireJac imports are `emit` from
+wirejac_events and `post_json` from wirejac_http. wirejac_config exports only
+BUILD_ID, COOLDOWN_MS, GYRO_THRESHOLD_DPS, HEARTBEAT_MS, I2C_ADDRESS,
+INGEST_URL, LINEAR_ACCEL_THRESHOLD_G, PIN_BUTTON, PIN_LED, PIN_SCL, PIN_SDA,
+SAMPLE_HZ, and TRIGGER_WINDOW_MS. Imports must be direct and unaliased,
+post_json must receive INGEST_URL first, Pin must receive PIN_* constants, and
+all mutable state must remain local to run(). Do not use global or nonlocal.
+Construct the sensor with MPU6050(i2c, I2C_ADDRESS), call initialize(), and read
+only with `accel, gyro, temperature = sensor.read()`; no wake, acceleration, or
+gyro members exist. emit accepts one positional string event name followed only
+by keyword fields. Return a corrected typed application only and preserve the
+required events.
+"""
+);
+sem repair_micropython = "Repair generated MicroPython from deterministic AST sandbox diagnostics.";
+sem repair_micropython.request = "Original immutable coordinator request.";
+sem repair_micropython.intent = "Electrically validated hardware intent.";
+sem repair_micropython.previous_application = "The rejected generated application.";
+sem repair_micropython.validation_errors = "Exact firmware sandbox errors that must all be fixed.";
 
 
 def default_phone_snatch_intent(request: HardwareRequest) -> HardwareIntent {

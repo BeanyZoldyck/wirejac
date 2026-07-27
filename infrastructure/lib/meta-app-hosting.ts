@@ -83,6 +83,9 @@ export class MetaAppHosting extends Construct {
         }),
       ],
       destinationBucket: this.bucket,
+      // config.js is written with a runtime secret by WriteConfigJs. Protect it
+      // from BucketDeployment's `sync --delete` pruning on later asset updates.
+      exclude: ['config.js'],
       distribution: this.distribution,
       distributionPaths: ['/*'],
     });
@@ -126,7 +129,7 @@ export class MetaAppHosting extends Construct {
           SecretArn: props.samplesApiKeySecret.secretArn,
           DistributionId: this.distribution.distributionId,
           // Force rewrite when this construct changes.
-          Version: '2',
+          Version: '3',
         },
       });
       writeConfig.node.addDependency(staticDeploy);

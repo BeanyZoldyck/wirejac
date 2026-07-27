@@ -1,6 +1,7 @@
-"""Wirejac accelerometer experiment dashboard."""
+"""Wirejac accelerometer experiment dashboard — green theme."""
 
 cl import from react { useEffect }
+
 cl import "./styles.css";
 
 cl {
@@ -169,7 +170,7 @@ cl {
         return <main className="shell">
             <header className="masthead">
                 <div>
-                    <p className="eyebrow">Wirejac Motion Lab / Capture 01</p>
+                    <p className="eyebrow">WireJac Motion Lab / Capture 01</p>
                     <h1>Snatch detection dataset</h1>
                     <p className="lede">
                         MPU6050 acceleration experiments captured at the moment

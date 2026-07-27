@@ -14,7 +14,9 @@ cloudfront = boto3.client("cloudfront")
 
 def handler(event: dict, _context: object) -> dict:
     props = event["ResourceProperties"]
-    physical_id = f"{props['Bucket']}/config.js"
+    # Preserve the resource ID across updates and return the ID CloudFormation
+    # supplied during deletion so replacement cleanup can complete.
+    physical_id = event.get("PhysicalResourceId") or f"{props['Bucket']}/config.js"
     if event.get("RequestType") == "Delete":
         return {"PhysicalResourceId": physical_id}
 

@@ -87,8 +87,8 @@ jac run main.jac --no-cache
 
 The Coordinator calls OpenRouter to produce an impact plan. Selected workspace nodes then call OpenRouter with contained file and command tools. Workspace tools cannot resolve paths outside their assigned directory.
 
-Client and Device agent sessions also connect to `jac mcp --mode lite` over
-stdio. They receive a constrained set of Jac documentation, formatting,
+Device agent sessions also connect to `jac mcp --mode lite` over stdio. They
+receive a constrained set of Jac documentation, formatting,
 linting, validation, and transpilation tools; MCP command execution and code
 execution tools are not exposed.
 

@@ -71,6 +71,9 @@ tailwindcss = "latest"
 [dev-dependencies]
 watchdog = ">=3.0.0"
 
+[byllm.model]
+default_model = "${BYLLM_DEFAULT_MODEL:-openrouter/deepseek/deepseek-v4-flash}"
+
 [serve]
 base_route_app = "app"
 

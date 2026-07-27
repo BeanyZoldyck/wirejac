@@ -18,12 +18,9 @@ API_KEY = os.environ["WIREJAC_API_KEY"]
 def response(status: int, body: dict) -> dict:
     return {
         "statusCode": status,
-        "headers": {
-            "content-type": "application/json",
-            "access-control-allow-origin": "*",
-            "access-control-allow-headers": "content-type,x-api-key",
-            "access-control-allow-methods": "GET,POST,OPTIONS",
-        },
+        # Lambda Function URL owns CORS. Duplicating those headers here causes
+        # browsers to reject the response even though command-line clients work.
+        "headers": {"content-type": "application/json"},
         "body": json.dumps(body),
     }
 
@@ -68,6 +65,8 @@ def list_samples(session_id: str) -> dict:
     result = TABLE.query(
         KeyConditionExpression="session_id = :session_id",
         ExpressionAttributeValues={":session_id": session_id},
+        ScanIndexForward=False,
+        Limit=200,
     )
     rows = result.get("Items", [])
     rows.sort(key=lambda item: int(item.get("captured_at_ms", 0)))

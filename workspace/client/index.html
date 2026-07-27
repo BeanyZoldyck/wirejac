@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WireJac Motion Lab</title>
+  <title>WireJac Motion Lab — Green</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,27 +13,36 @@
         <p class="eyebrow">WireJac Motion Lab</p>
         <h1>Snatch detection dataset</h1>
       </div>
-      <div class="status"><span></span> <span id="stream-status">connecting</span></div>
+      <div class="status-card">
+        <span id="status-dot" class="status-dot"></span>
+        <div>
+          <small>physical sensor stream</small>
+          <strong id="stream-status">connecting</strong>
+          <small id="last-update">waiting for a sample</small>
+        </div>
+      </div>
     </header>
 
     <section class="metrics" aria-label="Collection summary">
-      <article><strong id="sample-count">0</strong><span>active samples</span></article>
-      <article><strong>100 Hz</strong><span>sample rate</span></article>
+      <article><strong id="sample-count">0</strong><span>gyro samples</span></article>
       <article><strong id="session-id">training-001</strong><span>session</span></article>
+      <article><strong id="gyro-x">--</strong><span>gyro X deg/s</span></article>
+      <article><strong id="gyro-y">--</strong><span>gyro Y deg/s</span></article>
+      <article><strong id="gyro-z">--</strong><span>gyro Z deg/s</span></article>
     </section>
 
     <section class="chart-panel">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">Live acceleration</p>
-          <h2>Three-axis signal</h2>
+          <p class="eyebrow">Live ESP32 + GY-521 gyro</p>
+          <h2>Angular velocity</h2>
         </div>
         <div class="legend"><span class="x">X</span><span class="y">Y</span><span class="z">Z</span></div>
       </div>
-      <canvas id="motion-chart" width="1000" height="360" aria-label="Live accelerometer chart"></canvas>
+      <canvas id="motion-chart" width="1000" height="360" aria-label="Live gyroscope chart"></canvas>
     </section>
   </main>
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=green-1"></script>
 </body>
 </html>

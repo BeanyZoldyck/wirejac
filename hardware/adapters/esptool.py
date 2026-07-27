@@ -72,6 +72,12 @@ class EspToolAdapter:
         if not self.command_prefix:
             raise ValueError("esptool command prefix cannot be empty")
         self.require_stable_symlink = require_stable_symlink
+        configured_baud = os.environ.get("WIREJAC_ESPTOOL_BAUD", "").strip()
+        self.baud = int(configured_baud) if configured_baud else 0
+        if self.baud and not 115200 <= self.baud <= 921600:
+            raise ValueError(
+                "WIREJAC_ESPTOOL_BAUD must be between 115200 and 921600"
+            )
 
     def _port(self, device: SerialDevice) -> str:
         stable = Path(device.stable_path)
@@ -92,7 +98,10 @@ class EspToolAdapter:
         return device.stable_path
 
     def _command(self, device: SerialDevice, *arguments: str) -> tuple[str, ...]:
-        return self.command_prefix + ("--port", self._port(device), *arguments)
+        command = self.command_prefix + ("--port", self._port(device))
+        if self.baud:
+            command += ("--baud", str(self.baud))
+        return command + arguments
 
     def plan_identify(
         self, device: SerialDevice

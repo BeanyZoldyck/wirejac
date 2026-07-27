@@ -20,6 +20,8 @@ def:pub HardwarePanel(
     has stepIndex: int = 0;
     status = str(hardware.get("status", "queued"));
     artifact_values: list[dict] = hardware.get("artifacts", []);
+    hardware_events: list[dict] = hardware.get("events", []);
+    recent_events = hardware_events[-8:] if len(hardware_events) > 8 else hardware_events;
     steps: list[dict] = [];
     for artifact in artifact_values {
         if artifact.get("kind") == "assembly_step_svg" and artifact.get("data_url") {
@@ -79,6 +81,19 @@ def:pub HardwarePanel(
                 {int(hardware.get("artifact_count", 0))} artifacts
             </span>
         </div>
+
+        {if len(recent_events) > 0 {
+            <div className="px-3 py-2 border-t border-border flex flex-col gap-1.5">
+                {for event in recent_events {
+                    <div key={str(event.get("sequence", ""))} className="grid grid-cols-[auto_1fr] gap-2 text-[10px] leading-relaxed">
+                        <span className="font-mono uppercase text-muted-foreground">
+                            {str(event.get("phase", "hardware"))}
+                        </span>
+                        <span>{str(event.get("message", "Working"))}</span>
+                    </div>
+                }}
+            </div>
+        }}
 
         {for gate in gates {
             <div key={str(gate["gate_id"])} className="px-3 py-3 border-t border-border flex flex-col gap-2">

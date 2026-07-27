@@ -266,6 +266,31 @@ def dispatch_hardware_job(
 }
 
 
+"""Queue a real hardware run and return before its LLM phases finish."""
+def start_hardware_job(
+    request_id: str,
+    prompt: str,
+    device_task: str,
+    attempt: int = 0
+) -> HardwareDispatch {
+    _register_hardware_service();
+    request = hardware_request_for_change(request_id, prompt, device_task);
+    response = _submit_job(
+        request,
+        "graph:" + request_id + ":device:" + str(attempt),
+        launch_job=True
+    );
+    return HardwareDispatch(
+        job_id=response.job.job_id,
+        revision_id=response.job.revision_id,
+        status=response.job.status,
+        summary="Hardware job queued",
+        success=False,
+        awaiting_gate=False
+    );
+}
+
+
 def resolve_hardware_gate(
     job_id: str,
     gate_id: str,

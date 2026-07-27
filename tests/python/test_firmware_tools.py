@@ -89,6 +89,23 @@ def test_reviewed_motion_test_app_is_valid_and_bounded():
             "    emit('leak', secret=AUTHORIZATION)\n",
             "may use AUTHORIZATION only",
         ),
+        (
+            "from wirejac_events import emit\n\ndef run():\n"
+            "    emit('wirejac.ready', {'build': 'bad'})\n",
+            "fields must be keyword arguments",
+        ),
+        (
+            "from drivers.mpu6050 import MPU6050\n\ndef run():\n"
+            "    sensor = MPU6050(None)\n"
+            "    sensor.wake()\n",
+            "unsupported MPU6050 member 'wake'",
+        ),
+        (
+            "from drivers.mpu6050 import MPU6050\n\ndef run():\n"
+            "    sensor = MPU6050(None)\n"
+            "    return sensor.acceleration\n",
+            "unsupported MPU6050 member 'acceleration'",
+        ),
         ("def helper():\n    return None\n", "must define run()"),
         ("def run(:\n    return None\n", "syntax error"),
     ],
