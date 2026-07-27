@@ -5,6 +5,26 @@ description = "Multi-agent CI/CD orchestrator — native Jaclang OSP"
 entry-point = "main.jac"
 kind = "fullstack"
 
+[jacpack]
+name = "wirejac-dashboard"
+description = "WireJac mission-control dashboard for hardware CI/CD orchestration"
+jaclang = "0.13.5"
+plugins = [
+  { name = "jac-client", version = "0.3.11" },
+]
+
+[jacpack.options]
+files = [
+  "*.jac",
+  "components/**/*",
+  "lib/**/*.jac",
+  "styles/**/*",
+  "assets/**/*",
+  "vite.external-components.js",
+  "image.png",
+]
+directories = ["assets", "components", "lib", "styles"]
+
 [jac-shadcn]
 style = "nova"
 baseColor = "zinc"
